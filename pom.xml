@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ tigervnc-java-oculix
+  ~
+  ~ Copyright (C) 2002-2005  RealVNC Ltd.  All Rights Reserved.
+  ~ Copyright (C) 2011-2019  Brian P. Hinz and TigerVNC contributors.
+  ~ Copyright (C) 2019       Raimund Hocke (sikulix.com).
+  ~ Copyright (C) 2026       Julien Mer / Oculix contributors.
+  ~
+  ~ This software is licensed under the GNU General Public License, version 2
+  ~ (or, at your option, any later version).  See the LICENSE file in the root
+  ~ of this repository for the full text of the license.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ====================================================================
+         Coordinates
+         ==================================================================== -->
+
+    <groupId>io.github.oculix-org</groupId>
+    <artifactId>tigervnc-java-oculix</artifactId>
+    <version>2.0.0</version>
+    <packaging>jar</packaging>
+
+    <!-- ====================================================================
+         Project metadata (required for Maven Central publication)
+         ==================================================================== -->
+
+    <name>TigerVNC Java (Oculix fork)</name>
+    <description>
+        A standalone Maven distribution of the TigerVNC Java viewer, forked
+        from RaiMan/sikulix2tigervnc (archived) and maintained as a GPLv2
+        dependency for the Oculix visual automation framework.  Provides
+        com.tigervnc.* (RFB protocol, decoders, network, RDR, VNC viewer) and
+        com.sikulix.vnc.* (thin Java wrappers: VNCClient, VNCFrameBuffer,
+        VNCClipboard, XKeySym, security helpers).
+    </description>
+    <url>https://github.com/oculix-org/tigervnc-java-oculix</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <!-- ====================================================================
+         License
+         ====================================================================
+         The entire artifact is GPL v2 (or later).  Consumers that wish to
+         remain under a permissive license (MIT/Apache-2.0/BSD) MUST NOT
+         bundle this artifact statically into their own distribution; they
+         should declare it as an optional runtime dependency, so that the
+         end user chooses whether to pull it.
+         ==================================================================== -->
+
+    <licenses>
+        <license>
+            <name>GNU General Public License, version 2 (or any later version)</name>
+            <url>https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>
+                See the LICENSE and NOTICE files at the root of this
+                repository for the full text and per-file attribution.
+            </comments>
+        </license>
+    </licenses>
+
+    <!-- ====================================================================
+         Developers and contributors
+         ==================================================================== -->
+
+    <developers>
+        <developer>
+            <id>julienmerconsulting</id>
+            <name>Julien Mer</name>
+            <email>julien.mer38@gmail.com</email>
+            <organization>Oculix</organization>
+            <organizationUrl>https://github.com/oculix-org</organizationUrl>
+            <roles>
+                <role>Fork maintainer</role>
+            </roles>
+        </developer>
+        <developer>
+            <id>RaiMan</id>
+            <name>Raimund Hocke</name>
+            <email>rmhdevelop@me.com</email>
+            <organization>sikulix.com</organization>
+            <organizationUrl>https://sikulix.com</organizationUrl>
+            <roles>
+                <role>Original packager (com.sikulix:sikulix2tigervnc, 2017-2019)</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <contributors>
+        <contributor>
+            <name>Brian P. Hinz</name>
+            <roles>
+                <role>TigerVNC Java viewer principal author (upstream)</role>
+            </roles>
+            <url>https://github.com/TigerVNC/tigervnc</url>
+        </contributor>
+        <contributor>
+            <name>TigerVNC contributors</name>
+            <roles>
+                <role>Upstream protocol, decoders, RFB stack</role>
+            </roles>
+            <url>https://github.com/TigerVNC/tigervnc/graphs/contributors</url>
+        </contributor>
+        <contributor>
+            <name>RealVNC Ltd.</name>
+            <roles>
+                <role>Original RFB protocol implementation (2002-2005)</role>
+            </roles>
+            <url>https://www.realvnc.com/</url>
+        </contributor>
+    </contributors>
+
+    <!-- ====================================================================
+         Organization and SCM
+         ==================================================================== -->
+
+    <organization>
+        <name>Oculix</name>
+        <url>https://github.com/oculix-org</url>
+    </organization>
+
+    <scm>
+        <connection>scm:git:git://github.com/oculix-org/tigervnc-java-oculix.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com:oculix-org/tigervnc-java-oculix.git</developerConnection>
+        <url>https://github.com/oculix-org/tigervnc-java-oculix</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/oculix-org/tigervnc-java-oculix/issues</url>
+    </issueManagement>
+
+    <ciManagement>
+        <system>GitHub Actions</system>
+        <url>https://github.com/oculix-org/tigervnc-java-oculix/actions</url>
+    </ciManagement>
+
+    <distributionManagement>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://central.sonatype.com</url>
+        </repository>
+    </distributionManagement>
+
+    <!-- ====================================================================
+         Prerequisites and properties
+         ==================================================================== -->
+
+    <prerequisites>
+        <maven>3.6.3</maven>
+    </prerequisites>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Target Java 11 for broad downstream compatibility.              -->
+        <!-- Source code is pure Java + JDK Swing + jaxb-api; no need for    -->
+        <!-- newer language features.                                        -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
+
+        <!-- Plugin versions, pinned for reproducible builds. -->
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
+        <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <central-publishing-plugin.version>0.9.0</central-publishing-plugin.version>
+
+        <!-- Dependency versions.                                            -->
+        <!--                                                                  -->
+        <!-- NOTE on jsch:                                                    -->
+        <!--   The TigerVNC Java viewer (Tunnel.java, PasswdDialog.java) was  -->
+        <!--   originally written against JCraft JSch 0.1.53 (June 2015),     -->
+        <!--   which is what was vendored into SikuliX / Oculix.  We pin to   -->
+        <!--   0.1.55 here (the last classic release, 2018) because it is    -->
+        <!--   ABI-compatible with 0.1.53 and ships later bug fixes.          -->
+        <!--   Consumers who absolutely need 0.1.53 can override via          -->
+        <!--   <dependencyManagement> in their parent POM.                    -->
+        <!--                                                                  -->
+        <!-- NOTE on jzlib:                                                   -->
+        <!--   Used by com.tigervnc.rdr.ZlibInStream for RFB zlib streams.    -->
+        <!--   1.1.3 is the standard, stable release on Maven Central.        -->
+        <!--                                                                  -->
+        <!-- NOTE on jaxb-api:                                                -->
+        <!--   Required only for com.tigervnc.rfb.CSecurityTLS, which uses    -->
+        <!--   javax.xml.bind.DatatypeConverter.  Not bundled in JDK 11+.     -->
+        <jsch.version>0.1.55</jsch.version>
+        <jzlib.version>1.1.3</jzlib.version>
+        <jaxb-api.version>2.3.1</jaxb-api.version>
+        <junit-jupiter.version>5.10.2</junit-jupiter.version>
+    </properties>
+
+    <!-- ====================================================================
+         Dependencies
+         ====================================================================
+         Minimal set, explicitly scoped.  Everything else used by the
+         TigerVNC Java code is JDK-provided (javax.swing, javax.net.ssl,
+         javax.naming, java.nio, java.util.zip, etc.).
+
+           - com.jcraft:jsch       : SSH tunnel support in Tunnel.java and
+                                      PasswdDialog.java (BSD 3-clause).
+           - com.jcraft:jzlib      : zlib decompression used by the ZRLE and
+                                      Tight decoders via ZlibInStream
+                                      (BSD 3-clause).
+           - javax.xml.bind:jaxb-api :
+                                      DatatypeConverter for hex/base64 in
+                                      CSecurityTLS.  Required on Java 11+ since
+                                      javax.xml.bind was removed from the JDK.
+         ==================================================================== -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+            <version>${jsch.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jzlib</artifactId>
+            <version>${jzlib.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>${jaxb-api.version}</version>
+        </dependency>
+
+        <!-- Test-only. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit-jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- ====================================================================
+         Build
+         ==================================================================== -->
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
+
+        <plugins>
+            <!-- Compiler -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                </configuration>
+            </plugin>
+
+            <!-- Surefire (tests) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+            </plugin>
+
+            <!-- JAR packaging. No main class; this is a library. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven-jar-plugin.version}</version>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- ====================================================================
+         Profiles
+         ==================================================================== -->
+
+    <profiles>
+
+        <!-- ================================================================
+             build-source : attaches -sources.jar to the build.
+             ================================================================ -->
+        <profile>
+            <id>build-source</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven-source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- ================================================================
+             build-docs : attaches -javadoc.jar to the build.
+             ================================================================ -->
+        <profile>
+            <id>build-docs</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven-javadoc-plugin.version}</version>
+                        <configuration>
+                            <source>${maven.compiler.source}</source>
+                            <use>false</use>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- ================================================================
+             sign : detached GPG signatures for all attached artifacts.
+             ================================================================ -->
+        <profile>
+            <id>sign</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven-gpg-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- ================================================================
+             release : all-in-one profile for publishing to Maven Central
+             via the new Sonatype Central Portal.
+
+             Usage:
+                 mvn clean deploy -P release
+
+             Requires:
+               - ~/.m2/settings.xml with a <server id="central"/> entry
+                 containing your Central Portal user token.
+               - A GPG key published to keys.openpgp.org (or similar),
+                 and GPG_PASSPHRASE available to maven-gpg-plugin.
+             ================================================================ -->
+        <profile>
+            <id>release</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <!-- Central Portal publishing -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central-publishing-plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <tokenAuth>true</tokenAuth>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+
+                    <!-- GPG signing -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven-gpg-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Sources jar -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven-source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Javadoc jar -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven-javadoc-plugin.version}</version>
+                        <configuration>
+                            <source>${maven.compiler.source}</source>
+                            <use>false</use>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+    </profiles>
+
+</project>

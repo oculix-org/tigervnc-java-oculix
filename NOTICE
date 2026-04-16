@@ -1,0 +1,169 @@
+================================================================================
+tigervnc-java-oculix
+================================================================================
+
+Copyright (C) 2002-2005  RealVNC Ltd.  All Rights Reserved.
+Copyright (C) 2011-2019  Brian P. Hinz and TigerVNC contributors.
+Copyright (C) 2019       Raimund Hocke (sikulix.com) -- repackaging as
+                         com.sikulix:sikulix2tigervnc on Maven Central.
+Copyright (C) 2026       Julien Mer / Oculix contributors -- this fork.
+
+This product contains software licensed under the GNU General Public License,
+version 2 (or, at your option, any later version).  See the LICENSE file for
+the full text of the license.
+
+
+--------------------------------------------------------------------------------
+1. Upstream origin
+--------------------------------------------------------------------------------
+
+The vast majority of the Java source code in this repository, under the package
+`com.tigervnc.*`, originates from the TigerVNC Java viewer:
+
+    https://github.com/TigerVNC/tigervnc
+
+TigerVNC itself is a fork of the VNC code originally developed at AT&T and
+RealVNC Ltd., extended and maintained by Brian P. Hinz and the TigerVNC
+community.  Every source file in `com.tigervnc.*` retains its original GPL v2
+copyright header and attribution.  No file has been relicensed.
+
+
+--------------------------------------------------------------------------------
+2. Intermediate repackaging (sikulix2tigervnc)
+--------------------------------------------------------------------------------
+
+From 2017 until early 2026, Raimund Hocke (GitHub: RaiMan) maintained a
+repackaged distribution of the TigerVNC Java viewer as a standalone Maven
+artifact so that the SikuliX automation framework could depend on it without
+bundling GPL code into the SikuliX core:
+
+    groupId:     com.sikulix
+    artifactId:  sikulix2tigervnc
+    version:     1.1.4 (last published on Maven Central, 2019-08-02)
+    repository:  https://github.com/RaiMan/sikulix2tigervnc  (DELETED in 2026)
+
+Raimund Hocke's packaging work -- Maven build files, the `com.sikulix.vnc.*`
+wrapper layer (VNCClient, VNCFrameBuffer, VNCClipboard, XKeySym,
+BasicUserPasswdGetter, ThreadLocalSecurityClient), and minor Java adaptations --
+is preserved here and remains GPL v2.
+
+
+--------------------------------------------------------------------------------
+3. History of this repository
+--------------------------------------------------------------------------------
+
+The `com.tigervnc.*` and `com.sikulix.vnc.*` sources first landed in the Oculix
+codebase (https://github.com/oculix-org/Oculix) in February 2026 when the
+sikulix2tigervnc Maven dependency was inlined into the Oculix API module.
+That inlining inadvertently mixed GPL v2 sources with Oculix's MIT-licensed
+core, creating a license-compatibility problem.
+
+In April 2026 the GPL-licensed sources were extracted back out of Oculix into
+this standalone repository so that:
+
+  - Oculix itself can remain cleanly MIT-licensed.
+  - The TigerVNC Java viewer port continues to exist as a proper, GPL-compliant,
+    independently-versioned Maven artifact, available to any consumer who
+    accepts the GPL v2 terms (including Oculix, which depends on this artifact
+    optionally).
+
+The full git history of the sources -- original vendoring, bug fixes, and
+packaging changes -- is preserved in this repository via `git filter-repo`.
+
+
+--------------------------------------------------------------------------------
+4. Modifications made in this fork
+--------------------------------------------------------------------------------
+
+Per section 2(a) of the GNU General Public License v2, the following is a
+summary of the modifications carried out by the downstream maintainers of this
+fork, relative to the last upstream state imported from sikulix2tigervnc.
+
+Full, per-line authorship is available via `git log` / `git blame` on each
+file.  High-level summary:
+
+2026-02-25  Vendoring from sikulix2tigervnc into the Oculix API module.
+            Files: entire `com/tigervnc/**` and `com/sikulix/vnc/**` trees.
+            Authored by: Oculix maintainers (commits signed "Claude" on behalf
+            of julienmerconsulting).
+
+2026-02-26  Fix ZRLE/Tight framebuffer corruption on non-standard pixel formats.
+            Root cause: the ZRLE and Tight decoders assumed 3 bytes-per-pixel
+            (CPIXEL) for all 32bpp formats, but the VNC server only sends 3
+            bytes when the pixel format satisfies `is888()` (depth=24, max=255).
+            When the server pixel format did not meet that condition, the
+            server sent 4 bytes but the client read only 3, causing zlib stream
+            desynchronization and cascading tile corruption.
+            Files:
+              - com/tigervnc/rfb/ZRLEDecoder.java     (~2 lines)
+              - com/tigervnc/rfb/TightDecoder.java    (~6 lines)
+              - com/tigervnc/rdr/InStream.java        (~16 lines)
+              - com/sikulix/vnc/VNCClient.java        (~a few lines)
+            Authored by: Oculix maintainers.
+
+2026-02-26  Disable CPIXEL optimization in ZRLEDecoder and TightDecoder.
+            Pragmatic follow-up fix: force the decoders to always read `bpp/8`
+            bytes, bypassing the CPIXEL 3-byte shortcut, which eliminates an
+            entire class of corruption issues against servers that do not
+            strictly follow the RFB protocol.
+            Files:
+              - com/tigervnc/rfb/ZRLEDecoder.java
+              - com/tigervnc/rfb/TightDecoder.java
+            Authored by: Oculix maintainers.
+
+2026-02-26  Temporarily restrict the supported VeNCrypt/TLS security sub-types
+            to VncAuth only, to work around an `EndOfStream` exception observed
+            with certain servers during security type negotiation.
+            Files:
+              - com/tigervnc/rfb/CSecurityTLS.java  (behaviour change)
+              - com/sikulix/vnc/VNCClient.java      (negotiation)
+            Authored by: Oculix maintainers.
+
+2026-02-26  Tight encoding removed from the default list of supported encodings
+            and excluded from the fallback encoding loop in `writeSetEncodings`.
+            Files:
+              - com/tigervnc/rfb/CMsgWriterV3.java
+            Authored by: Oculix maintainers.
+
+2026-04-11  Deprecation / type-warning cleanup (non-functional):
+              - com/tigervnc/rfb/Configuration.java
+              - com/tigervnc/vncviewer/DesktopWindow.java
+              - com/tigervnc/vncviewer/FileUtils.java
+              - com/tigervnc/rdr/FdInStream.java
+              - com/tigervnc/rdr/FdOutStream.java
+            Authored by: julienmerconsulting (~10 lines total).
+
+2026-04-16  Extraction of the `com.tigervnc.*` and `com.sikulix.vnc.*` trees
+            into this standalone repository.  Git history preserved via
+            `git filter-repo`.  Restructured into a standalone Maven project
+            (src/main/java layout).  Added this NOTICE file, LICENSE (GPL v2),
+            standalone pom.xml, and README.md.
+            Authored by: Oculix maintainers.
+
+
+--------------------------------------------------------------------------------
+5. Third-party acknowledgments
+--------------------------------------------------------------------------------
+
+This software would not exist without the work of:
+
+  - The TigerVNC team (https://tigervnc.org/), for the Java viewer that forms
+    the core of this library.
+  - RealVNC Ltd. and the AT&T Laboratories Cambridge RFB team, for the
+    original VNC protocol implementation.
+  - Raimund Hocke (RaiMan) of sikulix.com, for packaging and maintaining
+    `sikulix2tigervnc` for many years and making it usable as a Maven artifact.
+
+
+--------------------------------------------------------------------------------
+6. Contact
+--------------------------------------------------------------------------------
+
+Fork maintainer:  Julien Mer  <julien.mer38@gmail.com>
+Project home:     https://github.com/oculix-org/tigervnc-java-oculix
+
+Upstream TigerVNC issues SHOULD be reported to the upstream project first:
+    https://github.com/TigerVNC/tigervnc/issues
+
+Issues specific to this fork (packaging, CPIXEL fixes, etc.) can be reported
+on this repository's issue tracker.
