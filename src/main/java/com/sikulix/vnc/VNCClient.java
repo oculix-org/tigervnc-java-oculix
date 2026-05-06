@@ -58,7 +58,7 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     this.security = new ThreadLocalSecurityClient(new BasicUserPasswdGetter(password));
 
     // CDC fix: force Raw encoding to avoid corruption with TigerVNC/RFB 3.x
-    this.currentEncoding = Encodings.encodingRaw;
+    this.currentEncoding = Encodings.encodingZRLE;
     this.setShared(shareConnection);
 
     setServerName(address);
@@ -81,6 +81,9 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     bufferW = this.cp.width;
     bufferH = this.cp.height;
     this.buffer = new VNCFrameBuffer(bufferW, bufferH, pixelFormat);
+    PixelFormat clientPF = this.buffer.getPixelFormat();
+    this.cp.setPF(clientPF);
+    this.writer().writeSetPixelFormat(clientPF);
     this.writer().writeSetEncodings(this.currentEncoding, true);
   }
 
