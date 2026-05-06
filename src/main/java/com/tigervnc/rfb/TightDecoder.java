@@ -61,11 +61,6 @@ public class TightDecoder extends Decoder {
     serverpf = handler.cp.pf();
     int bpp = serverpf.bpp;
     cutZeros = false;
-    if (bpp == 32) {
-      if (serverpf.is888()) {
-        cutZeros = true;
-      }
-    }
 
     int comp_ctl = is.readU8();
 
@@ -179,7 +174,7 @@ public class TightDecoder extends Decoder {
         if (cutZeros) {
           serverpf.bufferFromRGB(buf, ptr, netbuf, srcPtr, w*h);
         } else {
-          int pixelSize = (bpp >= 24) ? 3 : bpp/8;
+          int pixelSize = serverpf.bpp / 8;
           while (h > 0) {
             for (int i = 0; i < w; i++) {
               if (bpp == 8) {
