@@ -1,0 +1,16 @@
+name: "OculiX CodeQL config"
+
+# Custom CodeQL configuration for tigervnc-java-oculix.
+#
+# Rationale: the upstream TigerVNC Java sources (com.tigervnc.*) account for
+# ~95% of the codebase and follow conventions that differ from modern
+# CodeQL default suite (notably override annotations). Excluding rules that
+# generate large amounts of cosmetic noise without surfacing actual defects
+# keeps the security findings list focused on what matters.
+
+query-filters:
+  # Cosmetic: the Java compiler already enforces override matching at compile
+  # time. Adding @Override on every override is style preference, not a
+  # correctness or security concern. Excluded to reduce noise (191 findings).
+  - exclude:
+      id: java/missing-override-annotation
