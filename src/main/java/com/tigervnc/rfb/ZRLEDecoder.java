@@ -32,7 +32,22 @@ public class ZRLEDecoder extends Decoder {
     int[] buf = reader.getImageBuf(64 * 64 * 4);
     PixelFormat pf = handler.cp.pf();
     int bpp = pf.bpp;
+    // #443 fix: RFB spec allows the server to omit the padding byte when
+    // bpp == 32 && depth <= 24 && all RGB shifts fit within either the low
+    // 3 bytes (shifts 0..23) or the high 3 bytes (shifts 8..31). In that
+    // "compact CPIXEL" case the wire width is 3 bytes per pixel, not 4.
+    // TigerVNC C++, TightVNC 2.x and libvncserver (vino, x11vnc, krfb...)
+    // all emit 3-byte CPIXELs under those conditions; reading 4 bytes then
+    // desynchronises the zlib stream and throws "ZlibInStream: inflate failed"
+    // on the first non-trivial rectangle. Analysis and repro by @pantelisama.
     int bytesPerPixel = bpp / 8;
+    if (bpp == 32 && pf.depth <= 24) {
+      int maxShift = Math.max(pf.redShift, Math.max(pf.greenShift, pf.blueShift));
+      int minShift = Math.min(pf.redShift, Math.min(pf.greenShift, pf.blueShift));
+      if (minShift >= 8 || maxShift <= 23) {
+        bytesPerPixel = 3;
+      }
+    }
     boolean bigEndian = pf.bigEndian;
 
     int length = is.readU32();
