@@ -23,7 +23,7 @@
 
     <groupId>io.github.oculix-org</groupId>
     <artifactId>tigervnc-java-oculix</artifactId>
-    <version>2.0.2</version>
+    <version>2.0.3-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <!-- ====================================================================
@@ -182,11 +182,17 @@
         <!-- NOTE on jsch:                                                    -->
         <!--   The TigerVNC Java viewer (Tunnel.java, PasswdDialog.java) was  -->
         <!--   originally written against JCraft JSch 0.1.53 (June 2015),     -->
-        <!--   which is what was vendored into SikuliX / Oculix.  We pin to   -->
-        <!--   0.1.55 here (the last classic release, 2018) because it is    -->
-        <!--   ABI-compatible with 0.1.53 and ships later bug fixes.          -->
-        <!--   Consumers who absolutely need 0.1.53 can override via          -->
-        <!--   <dependencyManagement> in their parent POM.                    -->
+        <!--   which is what was vendored into SikuliX / Oculix.  We moved    -->
+        <!--   to the mwiede fork (com.github.mwiede:jsch) because upstream   -->
+        <!--   JCraft has been dormant since 2018 and the fork is now the     -->
+        <!--   maintained continuation:                                       -->
+        <!--     * Terrapin CVE-2023-48795 fixed since 0.2.15                 -->
+        <!--     * ed25519, chacha20-poly1305@openssh.com, rsa-sha2-256/512   -->
+        <!--     * OpenSSH 8.8+ server-side ssh-rsa deprecation compatible    -->
+        <!--     * curve25519-sha256 KEX                                      -->
+        <!--   Drop-in replacement: the fork keeps the same com.jcraft.jsch   -->
+        <!--   package, so no source change is required in Tunnel.java or in  -->
+        <!--   downstream OculiX SSHTunnel.java.                              -->
         <!--                                                                  -->
         <!-- NOTE on jzlib:                                                   -->
         <!--   Used by com.tigervnc.rdr.ZlibInStream for RFB zlib streams.    -->
@@ -195,7 +201,7 @@
         <!-- NOTE on jaxb-api:                                                -->
         <!--   Required only for com.tigervnc.rfb.CSecurityTLS, which uses    -->
         <!--   javax.xml.bind.DatatypeConverter.  Not bundled in JDK 11+.     -->
-        <jsch.version>0.1.55</jsch.version>
+        <jsch.version>0.2.25</jsch.version>
         <jzlib.version>1.1.3</jzlib.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
         <junit-jupiter.version>5.10.2</junit-jupiter.version>
@@ -208,8 +214,10 @@
          TigerVNC Java code is JDK-provided (javax.swing, javax.net.ssl,
          javax.naming, java.nio, java.util.zip, etc.).
 
-           - com.jcraft:jsch       : SSH tunnel support in Tunnel.java and
+           - com.github.mwiede:jsch : SSH tunnel support in Tunnel.java and
                                       PasswdDialog.java (BSD 3-clause).
+                                      Maintained fork of the classic com.jcraft:jsch,
+                                      keeps the same com.jcraft.jsch package.
            - com.jcraft:jzlib      : zlib decompression used by the ZRLE and
                                       Tight decoders via ZlibInStream
                                       (BSD 3-clause).
@@ -221,7 +229,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.jcraft</groupId>
+            <groupId>com.github.mwiede</groupId>
             <artifactId>jsch</artifactId>
             <version>${jsch.version}</version>
         </dependency>
