@@ -1,4 +1,5 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
+ * Copyright 2016-2019 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,21 +19,45 @@
 
 package com.tigervnc.rfb;
 
-public class ManagedPixelBuffer extends PixelBuffer {
-  public void setSize(int w, int h) {
-    width_ = w;
-    height_ = h;
-    checkDataSize();
-  }
-  public void setPF(PixelFormat pf) {
-    super.setPF(pf);
+import java.awt.image.*;
+
+public class ManagedPixelBuffer extends FullFramePixelBuffer {
+
+  public ManagedPixelBuffer() {
+    datasize = 0;
     checkDataSize();
   }
 
-  public int dataLen() { return area(); }
+  public ManagedPixelBuffer(PixelFormat pf, int w, int h)
+  {
+    super(pf, w, h, null);
+    datasize = 0;
+    checkDataSize();
+  }
+
+  public void setPF(PixelFormat pf) {
+    format = pf; checkDataSize();
+  }
+
+  public void setSize(int w, int h) {
+    width_ = w; height_ = h; checkDataSize();
+  }
 
   final void checkDataSize() {
-    if (data == null || data.length < dataLen())
-      data = new int[dataLen()];
+    int new_datasize = width_ * height_;
+    if (datasize < new_datasize) {
+      if (data != null) {
+        datasize = 0; data = null;
+      }
+      if (new_datasize > 0) {
+        ColorModel cm = format.getColorModel();
+        data = cm.createCompatibleWritableRaster(width_, height_);
+        image = new BufferedImage(cm, data, cm.isAlphaPremultiplied(), null);
+        datasize = new_datasize;
+      }
+    }
   }
+
+  protected int datasize;
+  static LogWriter vlog = new LogWriter("ManagedPixelBuffer");
 }

@@ -32,6 +32,9 @@ import java.net.UnknownHostException;
 import java.nio.*;
 import java.nio.channels.*;
 
+import java.util.Set;
+import java.util.Iterator;
+
 public class TcpSocket extends Socket {
 
   // -=- Socket initialisation
@@ -77,22 +80,38 @@ public class TcpSocket extends Socket {
     /* Attempt to connect to the remote host */
     try {
       result = sock.connect(new InetSocketAddress(addr, port));
+      if (!result) {
+        try (Selector selector = Selector.open()) {
+          SelectionKey connect_key =
+            sock.socket().getChannel().register(selector, SelectionKey.OP_CONNECT);
+          // Try for the connection for 3000ms
+          while (selector.select(3000) > 0) {
+            if (!result) {
+              Set keys = selector.selectedKeys();
+              Iterator i = keys.iterator();
+
+              while (i.hasNext()) {
+                SelectionKey key = (SelectionKey)i.next();
+                i.remove();
+
+                if (key.isConnectable()) {
+                  if (sock.isConnectionPending())
+                    sock.finishConnect();
+                  result = true;
+                  break;
+                }
+              }
+            }
+            if (result) break;
+          }
+          connect_key.cancel();
+        }
+      }
+      if (!result)
+        throw new SocketException("unable to connect to socket: Host is down");
     } catch(java.io.IOException e) {
       throw new SocketException("unable to connect:"+e.getMessage());
     }
-
-    if (!result && sock.isConnectionPending()) {
-      while (!result) {
-        try {
-          result = sock.finishConnect();
-        } catch(java.io.IOException e) {
-          throw new Exception(e.getMessage());
-        }
-      }
-    }
-
-    if (!result)
-      throw new SocketException("unable connect to socket");
 
     // Disable Nagle's algorithm, to reduce latency
     enableNagles(sock, false);
@@ -103,14 +122,7 @@ public class TcpSocket extends Socket {
     ownStreams = true;
   }
 
-  protected void finalize() throws Exception {
-    if (closeFd)
-      try {
-        ((SocketDescriptor)getFd()).close();
-      } catch (IOException e) {
-        throw new Exception(e.getMessage());
-      }
-  }
+
 
   public int getMyPort() {
     return getSockPort();
@@ -168,7 +180,7 @@ public class TcpSocket extends Socket {
     try {
       sock.channel.socket().setTcpNoDelay(!enable);
     } catch(java.net.SocketException e) {
-      vlog.error("unable to setsockopt TCP_NODELAY: "+e.getMessage());
+      vlog.error("Unable to setsockopt TCP_NODELAY: "+e.getMessage());
       return false;
     }
     return true;

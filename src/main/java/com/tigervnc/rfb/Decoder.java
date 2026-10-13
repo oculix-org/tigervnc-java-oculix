@@ -1,4 +1,5 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
+ * Copyright (C) 2019-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,34 +19,87 @@
 
 package com.tigervnc.rfb;
 
+import com.tigervnc.rdr.*;
+
 abstract public class Decoder {
 
-  abstract public void readRect(Rect r, CMsgHandler handler);
+  public static class DecoderFlags {
+    // A constant for decoders that don't need anything special
+    public static int DecoderPlain = 0;
+    // All rects for this decoder must be handled in order
+    public static int DecoderOrdered = 1 << 0;
+    // Only some of the rects must be handled in order,
+    // see doesRectsConflict()
+    public static int DecoderPartiallyOrdered = 1 << 1;
+  };
+
+  public Decoder(int flags)
+  {
+    this.flags = flags;
+  }
+
+  // close() releases any resources (e.g. zlib Inflater state, which is
+  // backed by native/off-heap memory and isn't freed just by the object
+  // being garbage collected) held by this decoder. Called once when the
+  // connection using it is closed. Default is a no-op; decoders that
+  // hold such resources (TightDecoder, ZRLEDecoder) override this.
+  public void close() { }
+
+  abstract public void readRect(Rect r, InStream is,
+                                ServerParams server, OutStream os);
+
+  abstract public void decodeRect(Rect r, Object buffer,
+                                  int buflen, ServerParams server,
+                                  ModifiablePixelBuffer pb);
+
+  public void getAffectedRegion(Rect rect, Object buffer,
+                                int buflen, ServerParams server,
+                                Region region)
+  {
+    region.reset(rect);
+  }
+
+  public boolean doRectsConflict(Rect rectA, Object bufferA,
+                                 int buflenA, Rect rectB,
+                                 Object bufferB, int buflenB,
+                                 ServerParams server)
+  {
+    return false;
+  }
 
   static public boolean supported(int encoding)
   {
-/*
-    return encoding <= Encodings.encodingMax && createFns[encoding];
-*/
-    return (encoding == Encodings.encodingRaw ||
-            encoding == Encodings.encodingRRE ||
-            encoding == Encodings.encodingHextile ||
-            encoding == Encodings.encodingTight ||
-            encoding == Encodings.encodingZRLE);
-  }
-  static public Decoder createDecoder(int encoding, CMsgReader reader) {
-/*
-    if (encoding <= Encodings.encodingMax && createFns[encoding])
-      return (createFns[encoding])(reader);
-    return 0;
-*/
     switch(encoding) {
-    case Encodings.encodingRaw:     return new RawDecoder(reader);
-    case Encodings.encodingRRE:     return new RREDecoder(reader);
-    case Encodings.encodingHextile: return new HextileDecoder(reader);
-    case Encodings.encodingTight:   return new TightDecoder(reader);
-    case Encodings.encodingZRLE:    return new ZRLEDecoder(reader);
+    case Encodings.encodingRaw:
+    case Encodings.encodingCopyRect:
+    case Encodings.encodingRRE:
+    case Encodings.encodingHextile:
+    case Encodings.encodingZRLE:
+    case Encodings.encodingTight:
+      return true;
+    default:
+      return false;
     }
-    return null;
   }
+
+  static public Decoder createDecoder(int encoding) {
+    switch(encoding) {
+    case Encodings.encodingRaw:
+      return new RawDecoder();
+    case Encodings.encodingCopyRect:
+      return new CopyRectDecoder();
+    case Encodings.encodingRRE:
+      return new RREDecoder();
+    case Encodings.encodingHextile:
+      return new HextileDecoder();
+    case Encodings.encodingZRLE:
+      return new ZRLEDecoder();
+    case Encodings.encodingTight:
+      return new TightDecoder();
+    default:
+      return null;
+    }
+  }
+
+  public final int flags;
 }

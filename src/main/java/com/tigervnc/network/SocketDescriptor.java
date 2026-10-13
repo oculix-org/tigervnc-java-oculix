@@ -1,4 +1,4 @@
-/* Copyright (C) 2012 Brian P. Hinz
+/* Copyright (C) 2012-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,15 +36,9 @@ public class SocketDescriptor implements FileDescriptor {
     try {
       channel = SocketChannel.open();
       channel.configureBlocking(false);
-      writeSelector = Selector.open();
-      readSelector = Selector.open();
+      selector = Selector.open();
+      channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
     } catch (IOException e) {
-      throw new Exception(e.getMessage());
-    }
-    try {
-      channel.register(writeSelector, SelectionKey.OP_WRITE);
-      channel.register(readSelector, SelectionKey.OP_READ);
-    } catch (java.nio.channels.ClosedChannelException e) {
       throw new Exception(e.getMessage());
     }
   }
@@ -60,6 +54,9 @@ public class SocketDescriptor implements FileDescriptor {
 
   public void close() throws IOException {
     try {
+      if (selector != null) {
+        try { selector.close(); } catch (Exception ignored) {}
+      }
       channel.close();
     } catch(IOException e) {
       throw new IOException(e.getMessage());
@@ -67,52 +64,16 @@ public class SocketDescriptor implements FileDescriptor {
   }
 
   private static SelectorProvider DefaultSelectorProvider() {
-    // kqueue() selector provider on OS X is not working, fall back to select() for now
-    String os = System.getProperty("os.name");
-    if (os.startsWith("Mac OS X"))
-      System.setProperty("java.nio.channels.spi.SelectorProvider","sun.nio.ch.PollSelectorProvider");
     return SelectorProvider.provider();
-  }
-
-  synchronized public int read(byte[] buf, int bufPtr, int length) throws Exception {
-    int n;
-    ByteBuffer b = ByteBuffer.allocate(length);
-    try {
-      n = channel.read(b);
-    } catch (java.io.IOException e) {
-      throw new Exception(e.getMessage());
-    }
-    if (n <= 0)
-      return (n == 0) ? -1 : 0;
-    b.flip();
-    b.get(buf, bufPtr, n);
-    b.clear();
-    return n;
-
-  }
-
-  synchronized public int write(byte[] buf, int bufPtr, int length) throws Exception {
-    int n;
-    ByteBuffer b = ByteBuffer.allocate(length);
-    b.put(buf, bufPtr, length);
-    b.flip();
-    try {
-      n = channel.write(b);
-    } catch (java.io.IOException e) {
-      throw new Exception(e.getMessage());
-    }
-    b.clear();
-    return n;
   }
 
   synchronized public int select(int interestOps, Integer timeout) throws Exception {
     int n;
-    Selector selector;
-    if ((interestOps & SelectionKey.OP_READ) != 0) {
-      selector = readSelector;
-    } else {
-      selector = writeSelector;
-    }
+    if (selector == null) return 0;
+    SelectionKey key = channel.keyFor(selector);
+    if (key == null || !key.isValid())
+      return 0;
+    key.interestOps(interestOps);
     selector.selectedKeys().clear();
     try {
       if (timeout == null) {
@@ -131,51 +92,31 @@ public class SocketDescriptor implements FileDescriptor {
     } catch (java.io.IOException e) {
       throw new Exception(e.getMessage());
     }
+    if (n > 0 && (key.readyOps() & interestOps) == 0)
+      return 0;
     return n;
   }
 
-  public int write(ByteBuffer buf) throws Exception {
-    int n = 0;
+  public int write(ByteBuffer buf, int len) throws Exception {
     try {
-      n = channel.write(buf);
+      int n = channel.write((ByteBuffer)buf.slice().limit(len));
+      if (n > 0)
+        buf.position(buf.position()+n);
+      return n;
     } catch (java.io.IOException e) {
       throw new Exception(e.getMessage());
     }
-    return n;
   }
 
-  public long write(ByteBuffer[] buf, int offset, int length)
-        throws IOException
-  {
-    long n = 0;
+  public int read(ByteBuffer buf, int len) throws Exception {
     try {
-      n = channel.write(buf, offset, length);
-    } catch (java.io.IOException e) {
+      int n = channel.read((ByteBuffer)buf.slice().limit(len));
+      if (n > 0)
+        buf.position(buf.position()+n);
+      return n;
+    } catch (java.lang.Exception e) {
       throw new Exception(e.getMessage());
     }
-    return n;
-  }
-
-  public int read(ByteBuffer buf) throws IOException {
-    int n = 0;
-    try {
-      n = channel.read(buf);
-    } catch (java.io.IOException e) {
-      throw new Exception(e.getMessage());
-    }
-    return n;
-  }
-
-  public long read(ByteBuffer[] buf, int offset, int length)
-        throws IOException
-  {
-    long n = 0;
-    try {
-      n = channel.read(buf, offset, length);
-    } catch (java.io.IOException e) {
-      throw new Exception(e.getMessage());
-    }
-    return n;
   }
 
   public java.net.Socket socket() {
@@ -210,40 +151,22 @@ public class SocketDescriptor implements FileDescriptor {
     return channel.isConnected();
   }
 
-  protected void implConfigureBlocking(boolean block) throws IOException {
-    channel.configureBlocking(block);
-  }
-
-  protected synchronized void implCloseSelectableChannel() throws IOException {
-    channel.close();
-    notifyAll();
-  }
-
   protected void setChannel(SocketChannel channel_) {
     try {
       if (channel != null)
         channel.close();
-      if (readSelector != null)
-        readSelector.close();
-      if (writeSelector != null)
-        writeSelector.close();
+      if (selector != null)
+        selector.close();
       channel = channel_;
       channel.configureBlocking(false);
-      writeSelector = Selector.open();
-      readSelector = Selector.open();
+      selector = Selector.open();
+      channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
     } catch (java.io.IOException e) {
       throw new Exception(e.getMessage());
-    }
-    try {
-      channel.register(writeSelector, SelectionKey.OP_WRITE);
-      channel.register(readSelector, SelectionKey.OP_READ);
-    } catch (java.nio.channels.ClosedChannelException e) {
-      System.out.println(e.toString());
     }
   }
 
   protected SocketChannel channel;
-  protected Selector writeSelector;
-  protected Selector readSelector;
+  protected Selector selector;
 
 }

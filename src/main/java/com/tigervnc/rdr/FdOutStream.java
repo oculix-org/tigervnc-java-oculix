@@ -1,6 +1,6 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
  * Copyright 2011 Pierre Ossman for Cendio AB
- * Copyright (C) 2012,2014 Brian P. Hinz
+ * Copyright (C) 2012-2019 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +20,10 @@
 
 package com.tigervnc.rdr;
 
-import com.tigervnc.network.*;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
+
+import com.tigervnc.network.*;
 
 public class FdOutStream extends OutStream {
 
@@ -36,6 +38,8 @@ public class FdOutStream extends OutStream {
     offset = 0;
     ptr = sentUpTo = start = 0;
     end = start + bufSize;
+
+    lastWrite = System.currentTimeMillis();
   }
 
   public FdOutStream(FileDescriptor fd_) { this(fd_, true, -1, 0); }
@@ -53,17 +57,27 @@ public class FdOutStream extends OutStream {
     return offset + ptr - sentUpTo;
   }
 
-  public void flush()
+  public boolean hasBufferedData()
   {
-    int timeoutms_;
+    return length() > 0;
+  }
 
-    if (blocking)
-      timeoutms_ = timeoutms;
-    else
-      timeoutms_ = 0;
+  int bufferUsage()
+  {
+    return ptr - sentUpTo;
+  }
 
+  long getIdleTime()
+  {
+    return System.currentTimeMillis()-lastWrite;
+  }
+
+  public synchronized void flush()
+  {
     while (sentUpTo < ptr) {
-      int n = writeWithTimeout(b, sentUpTo, ptr - sentUpTo, timeoutms_);
+      int n = writeWithTimeout(b, sentUpTo,
+                               ptr - sentUpTo,
+                               blocking ? timeoutms : 0);
 
       // Timeout?
       if (n == 0) {
@@ -71,13 +85,6 @@ public class FdOutStream extends OutStream {
         if (!blocking)
           break;
 
-        // Otherwise try blocking (with possible timeout)
-        if ((timeoutms_ == 0) && (timeoutms != 0)) {
-          timeoutms_ = timeoutms;
-          break;
-        }
-
-        // Proper timeout
         throw new TimedOut();
       }
 
@@ -90,40 +97,7 @@ public class FdOutStream extends OutStream {
       ptr = sentUpTo = start;
   }
 
-  private int writeWithTimeout(byte[] data, int dataPtr, int length, int timeoutms)
-  {
-    int n;
-
-    do {
-
-      Integer tv;
-      if (timeoutms != -1) {
-        tv = new Integer(timeoutms);
-      } else {
-        tv = null;
-      }
-
-      try {
-        n = fd.select(SelectionKey.OP_WRITE, tv);
-      } catch (java.lang.Exception e) {
-        System.out.println(e.toString());
-        throw new Exception(e.getMessage());
-      }
-
-    } while (n < 0);
-
-    if (n == 0) return 0;
-
-    try {
-      n = fd.write(data, dataPtr, length);
-    } catch (java.lang.Exception e) {
-      throw new Exception(e.getMessage());
-    }
-
-    return n;
-  }
-
-  protected int overrun(int itemSize, int nItems)
+  protected synchronized int overrun(int itemSize, int nItems)
   {
     if (itemSize > bufSize)
       throw new Exception("FdOutStream overrun: max itemSize exceeded");
@@ -152,11 +126,47 @@ public class FdOutStream extends OutStream {
       }
     }
 
-    // Can we fit all the items asked for?
-    if (itemSize * nItems > end - ptr)
-      nItems = (end - ptr) / itemSize;
+    int nAvail;
+    nAvail = (end - ptr) / itemSize;
+    if (nAvail < nItems)
+      return nAvail;
 
     return nItems;
+  }
+
+  private synchronized int writeWithTimeout(byte[] data, int dataPtr, int length, int timeoutms)
+  {
+    int n;
+
+    do {
+
+      Integer tv;
+      if (timeoutms != -1) {
+        tv = Integer.valueOf(timeoutms);
+      } else {
+        tv = null;
+      }
+
+      try {
+        n = fd.select(SelectionKey.OP_WRITE, tv);
+      } catch (java.lang.Exception e) {
+        System.out.println(e.toString());
+        throw new Exception(e.getMessage());
+      }
+
+    } while (n < 0);
+
+    if (n == 0) return 0;
+
+    try {
+      n = fd.write(ByteBuffer.wrap(data, dataPtr, length), length);
+    } catch (java.lang.Exception e) {
+      throw new Exception(e.getMessage());
+    }
+
+    lastWrite = System.currentTimeMillis();
+
+    return n;
   }
 
   public FileDescriptor getFd() {
@@ -178,4 +188,5 @@ public class FdOutStream extends OutStream {
   protected int sentUpTo;
   protected int offset;
   protected int bufSize;
+  private long lastWrite;
 }

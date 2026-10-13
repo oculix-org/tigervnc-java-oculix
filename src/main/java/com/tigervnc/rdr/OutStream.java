@@ -1,4 +1,5 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
+ * Copyright (C) 2011-2019 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +24,8 @@
 
 package com.tigervnc.rdr;
 
+import java.nio.*;
+
 import com.tigervnc.network.*;
 
 abstract public class OutStream {
@@ -32,12 +35,15 @@ abstract public class OutStream {
   // of nItems).
 
   public final int check(int itemSize, int nItems) {
-    if (ptr + itemSize * nItems > end) {
-      if (ptr + itemSize > end)
-        return overrun(itemSize, nItems);
+    int nAvail;
 
-      nItems = (end - ptr) / itemSize;
-    }
+    if (itemSize > (end - ptr))
+      return overrun(itemSize, nItems);
+
+    nAvail = (end - ptr) / itemSize;
+    if (nAvail < nItems)
+      return nAvail;
+
     return nItems;
   }
 
@@ -82,14 +88,14 @@ abstract public class OutStream {
   // writeString() writes a string - a U32 length followed by the data.
 
   public final void writeString(String str) {
-    int len = str.length();
-    writeU32(len);
+    byte[] utf8str;
     try {
-      byte[] utf8str = str.getBytes("UTF8");
-      writeBytes(utf8str, 0, len);
+      utf8str = str.getBytes("UTF-8");
     } catch(java.io.UnsupportedEncodingException e) {
-      e.printStackTrace();
+      utf8str = str.getBytes();
     }
+    writeU32(utf8str.length);
+    writeBytes(utf8str, 0, utf8str.length);
   }
 
   public final void pad(int bytes) {
@@ -113,6 +119,26 @@ abstract public class OutStream {
       System.arraycopy(data, dataPtr, b, ptr, n);
       ptr += n;
       dataPtr += n;
+    }
+  }
+
+  public void writeBytes(ByteBuffer data, int length) {
+    while (length > 0) {
+      int n = check(1, length);
+      data.get(b, ptr, n);
+      ptr += n;
+      length -= n;
+    }
+  }
+
+  // copyBytes() efficiently transfers data between streams
+
+  public void copyBytes(InStream is, int length) {
+    while (length > 0) {
+      int n = check(1, length);
+      is.readBytes(ByteBuffer.wrap(b, ptr, n), n);
+      ptr += n;
+      length -= n;
     }
   }
 

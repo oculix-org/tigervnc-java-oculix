@@ -1,4 +1,5 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
+ * Copyright (C) 2011-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +24,8 @@
 
 package com.tigervnc.rdr;
 
+import java.nio.*;
+
 import com.tigervnc.network.*;
 
 abstract public class InStream {
@@ -32,12 +35,29 @@ abstract public class InStream {
   // maximum of nItems).
 
   public int check(int itemSize, int nItems, boolean wait) {
-    if (ptr + itemSize * nItems > end) {
-      if (ptr + itemSize > end)
-        return overrun(itemSize, nItems, wait);
+    int nAvail;
 
-      nItems = (end - ptr) / itemSize;
+    if (itemSize > (end - ptr)) {
+      if (restorePoint >= 0) {
+        // Need more data with a restore point active - rewind to the
+        // restore point so overrun()'s buffer compaction preserves the
+        // data between restorePoint and ptr, then fix both up afterwards.
+        int restoreDiff = ptr - restorePoint;
+        ptr = restorePoint;
+        int ret = overrun(itemSize + restoreDiff, nItems, wait);
+        restorePoint = ptr;
+        ptr += restoreDiff;
+        if (ret == 0)
+          return 0;
+      } else {
+        return overrun(itemSize, nItems, wait);
+      }
     }
+
+    nAvail = (end - ptr) / itemSize;
+    if (nAvail < nItems)
+      return nAvail;
+
     return nItems;
   }
 
@@ -72,11 +92,11 @@ abstract public class InStream {
     if (len > maxStringLength)
       throw new Exception("InStream max string length exceeded");
 
-    byte[] str = new byte[len];
-    readBytes(str, 0, len);
+    ByteBuffer str = ByteBuffer.allocate(len);
+    readBytes(str, len);
     String utf8string = new String();
     try {
-      utf8string = new String(str,"UTF8");
+      utf8string = new String(str.array(),"UTF8");
     } catch(java.io.UnsupportedEncodingException e) {
       e.printStackTrace();
     }
@@ -96,15 +116,14 @@ abstract public class InStream {
     }
   }
 
-  // readBytes() reads an exact number of bytes into an array at an offset.
+  // readBytes() reads an exact number of bytes
 
-  public void readBytes(byte[] data, int dataPtr, int length) {
-    int dataEnd = dataPtr + length;
-    while (dataPtr < dataEnd) {
-      int n = check(1, dataEnd - dataPtr);
-      System.arraycopy(b, ptr, data, dataPtr, n);
+  public void readBytes(ByteBuffer data, int length) {
+    while (length > 0) {
+      int n = check(1, length);
+      data.put(b, ptr, n);
       ptr += n;
-      dataPtr += n;
+      length -= n;
     }
   }
 
@@ -114,67 +133,6 @@ abstract public class InStream {
   public final int readOpaque8()  { return readU8(); }
   public final int readOpaque16() { return readU16(); }
   public final int readOpaque32() { return readU32(); }
-  public final int readOpaque24A() { check(3); int b0 = b[ptr++];
-                                     int b1 = b[ptr++]; int b2 = b[ptr++];
-                                     return b0 << 24 | b1 << 16 | b2 << 8; }
-  public final int readOpaque24B() { check(3); int b0 = b[ptr++];
-                                     int b1 = b[ptr++]; int b2 = b[ptr++];
-                                     return b0 << 16 | b1 << 8 | b2; }
-
-  public final int readPixel(int bytesPerPixel, boolean bigEndian) {
-    byte[] pix = new byte[4];
-    readBytes(pix, 0, bytesPerPixel);
-
-    if (bytesPerPixel == 4) {
-      if (bigEndian) {
-        return (pix[0] & 0xff) << 24 | (pix[1] & 0xff) << 16 | (pix[2] & 0xff) << 8 | (pix[3] & 0xff);
-      } else {
-        return (pix[3] & 0xff) << 24 | (pix[2] & 0xff) << 16 | (pix[1] & 0xff) << 8 | (pix[0] & 0xff);
-      }
-    }
-
-    // 3-byte CPIXEL (or 1/2 byte)
-    if (bigEndian) {
-      return 0xff000000 | (pix[0] & 0xff)<<16 | (pix[1] & 0xff)<<8 | (pix[2] & 0xff);
-    } else {
-      return 0xff000000 | (pix[2] & 0xff)<<16 | (pix[1] & 0xff)<<8 | (pix[0] & 0xff);
-    }
-  }
-
-  public final void readPixels(int[] buf, int length, int bytesPerPixel, boolean bigEndian) {
-    int npixels = length*bytesPerPixel;
-    byte[] pixels = new byte[npixels];
-    readBytes(pixels, 0, npixels);
-    for (int i = 0; i < length; i++) {
-      byte[] pix = new byte[4];
-      System.arraycopy(pixels, i*bytesPerPixel, pix, 0, bytesPerPixel);
-      if (bytesPerPixel == 4) {
-        if (bigEndian) {
-          buf[i] = (pix[0] & 0xff) << 24 | (pix[1] & 0xff) << 16 | (pix[2] & 0xff) << 8 | (pix[3] & 0xff);
-        } else {
-          buf[i] = (pix[3] & 0xff) << 24 | (pix[2] & 0xff) << 16 | (pix[1] & 0xff) << 8 | (pix[0] & 0xff);
-        }
-      } else if (bigEndian) {
-        buf[i] = 0xff000000 | (pix[0] & 0xff)<<16 | (pix[1] & 0xff)<<8 | (pix[2] & 0xff);
-      } else {
-        buf[i] = 0xff000000 | (pix[2] & 0xff)<<16 | (pix[1] & 0xff)<<8 | (pix[0] & 0xff);
-      }
-    }
-  }
-
-  public final int readCompactLength() {
-    int b = readU8();
-    int result = b & 0x7F;
-    if ((b & 0x80) != 0) {
-      b = readU8();
-      result |= (b & 0x7F) << 7;
-      if ((b & 0x80) != 0) {
-        b = readU8();
-        result |= (b & 0xFF) << 14;
-      }
-    }
-    return result;
-  }
 
   // pos() returns the position in the stream.
 
@@ -201,9 +159,35 @@ abstract public class InStream {
   // is supposed to be "small" (a few bytes).
 
   abstract protected int overrun(int itemSize, int nItems, boolean wait);
+  protected int overrun(int itemSize, int nItems) {
+    return overrun(itemSize, nItems, true);
+  }
+
+  public final void setRestorePoint() {
+    restorePoint = ptr;
+  }
+
+  public final void clearRestorePoint() {
+    restorePoint = -1;
+  }
+
+  public final void gotoRestorePoint() {
+    if (restorePoint != -1) {
+      ptr = restorePoint;
+      restorePoint = -1;
+    }
+  }
+
+  public final boolean hasDataOrRestore(int length) {
+    if (checkNoWait(length))
+      return true;
+    gotoRestorePoint();
+    return false;
+  }
 
   protected InStream() {}
   protected byte[] b;
   protected int ptr;
   protected int end;
+  protected int restorePoint = -1;
 }

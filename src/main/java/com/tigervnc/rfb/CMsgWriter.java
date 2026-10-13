@@ -1,6 +1,6 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
  * Copyright 2009-2011 Pierre Ossman for Cendio AB
- * Copyright (C) 2011 Brian P. Hinz
+ * Copyright (C) 2011-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,156 +20,309 @@
 
 package com.tigervnc.rfb;
 
+import com.tigervnc.rdr.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import com.tigervnc.rdr.*;
+import java.util.*;
 
-abstract public class CMsgWriter {
+public class CMsgWriter {
 
-  abstract public void writeClientInit(boolean shared);
-
-  synchronized public void writeSetPixelFormat(PixelFormat pf)
+  protected CMsgWriter(ServerParams server_, OutStream os_)
   {
-    startMsg(MsgTypes.msgTypeSetPixelFormat);
-    os.pad(3);
-    pf.write(os);
-    endMsg();
+    server = server_;
+    os = os_;
   }
 
-  synchronized public void writeSetEncodings(int nEncodings, int[] encodings)
-  {
-    startMsg(MsgTypes.msgTypeSetEncodings);
-    os.skip(1);
-    os.writeU16(nEncodings);
-    for (int i = 0; i < nEncodings; i++)
-      os.writeU32(encodings[i]);
-    endMsg();
+  public void writeClientInit(boolean shared) {
+    synchronized (os) {
+      os.writeU8(shared?1:0);
+      endMsg();
+    }
   }
 
-  // Ask for encodings based on which decoders are supported.  Assumes higher
-  // encoding numbers are more desirable.
-
-  synchronized public void writeSetEncodings(int preferredEncoding, boolean useCopyRect)
+  public void writeSetPixelFormat(PixelFormat pf)
   {
-    int nEncodings = 0;
-    int[] encodings = new int[Encodings.encodingMax+3];
-    if (cp.supportsLocalCursor)
-      encodings[nEncodings++] = Encodings.pseudoEncodingCursor;
-    if (cp.supportsDesktopResize)
-      encodings[nEncodings++] = Encodings.pseudoEncodingDesktopSize;
-    if (cp.supportsExtendedDesktopSize)
-      encodings[nEncodings++] = Encodings.pseudoEncodingExtendedDesktopSize;
-    if (cp.supportsDesktopRename)
-      encodings[nEncodings++] = Encodings.pseudoEncodingDesktopName;
-    if (cp.supportsClientRedirect)
-      encodings[nEncodings++] = Encodings.pseudoEncodingClientRedirect;
-
-    encodings[nEncodings++] = Encodings.pseudoEncodingLastRect;
-    encodings[nEncodings++] = Encodings.pseudoEncodingContinuousUpdates;
-    encodings[nEncodings++] = Encodings.pseudoEncodingFence;
-
-
-    if (Decoder.supported(preferredEncoding)) {
-      encodings[nEncodings++] = preferredEncoding;
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeSetPixelFormat);
+      os.pad(3);
+      pf.write(os);
+      endMsg();
     }
+  }
 
-    if (useCopyRect) {
-      encodings[nEncodings++] = Encodings.encodingCopyRect;
+  public void writeSetEncodings(List<Integer> encodings)
+  {
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeSetEncodings);
+      os.skip(1);
+      os.writeU16(encodings.size());
+      for (Iterator<Integer> i = encodings.iterator(); i.hasNext();)
+        os.writeU32(i.next());
+      endMsg();
     }
+  }
 
-    /*
-     * Prefer encodings in this order:
-     *
-     *   ZRLE, Hextile, *
-     */
+  public void writeSetDesktopSize(int width, int height,
+                               ScreenSet layout)
+	{
+	  if (!server.supportsSetDesktopSize)
+	    throw new Exception("Server does not support SetDesktopSize");
 
-    if ((preferredEncoding != Encodings.encodingZRLE) &&
-        Decoder.supported(Encodings.encodingZRLE))
-      encodings[nEncodings++] = Encodings.encodingZRLE;
+	  synchronized (os) {
+	    startMsg(MsgTypes.msgTypeSetDesktopSize);
+	    os.pad(1);
 
-    if ((preferredEncoding != Encodings.encodingHextile) &&
-        Decoder.supported(Encodings.encodingHextile))
-      encodings[nEncodings++] = Encodings.encodingHextile;
+	    os.writeU16(width);
+	    os.writeU16(height);
 
-    // Remaining encodings
-    for (int i = Encodings.encodingMax; i >= 0; i--) {
-      switch (i) {
-      case Encodings.encodingTight:
-      case Encodings.encodingZRLE:
-      case Encodings.encodingHextile:
-        break;
-      default:
-        if ((i != preferredEncoding) && Decoder.supported(i))
-            encodings[nEncodings++] = i;
+	    os.writeU8(layout.num_screens());
+	    os.pad(1);
+
+      for (Iterator<Screen> iter = layout.screens.iterator(); iter.hasNext(); ) {
+        Screen refScreen = (Screen)iter.next();
+	      os.writeU32(refScreen.id);
+	      os.writeU16(refScreen.dimensions.tl.x);
+	      os.writeU16(refScreen.dimensions.tl.y);
+	      os.writeU16(refScreen.dimensions.width());
+	      os.writeU16(refScreen.dimensions.height());
+	      os.writeU32(refScreen.flags);
+	    }
+
+	    endMsg();
+	  }
+	}
+
+  public void writeFramebufferUpdateRequest(Rect r, boolean incremental)
+  {
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeFramebufferUpdateRequest);
+      os.writeU8(incremental?1:0);
+      os.writeU16(r.tl.x);
+      os.writeU16(r.tl.y);
+      os.writeU16(r.width());
+      os.writeU16(r.height());
+      endMsg();
+    }
+  }
+
+  public void writeEnableContinuousUpdates(boolean enable,
+                                           int x, int y, int w, int h)
+  {
+    if (!server.supportsContinuousUpdates)
+      throw new Exception("Server does not support continuous updates");
+
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeEnableContinuousUpdates);
+
+      os.writeU8((enable?1:0));
+
+      os.writeU16(x);
+      os.writeU16(y);
+      os.writeU16(w);
+      os.writeU16(h);
+
+      endMsg();
+    }
+  }
+
+  public void writeFence(int flags, int len, byte[] data)
+  {
+    if (!server.supportsFence)
+      throw new Exception("Server does not support fences");
+    if (len > 64)
+      throw new Exception("Too large fence payload");
+    if ((flags & ~fenceTypes.fenceFlagsSupported) != 0)
+      throw new Exception("Unknown fence flags");
+
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientFence);
+      os.pad(3);
+
+      os.writeU32(flags);
+
+      os.writeU8(len);
+      os.writeBytes(data, 0, len);
+
+      endMsg();
+    }
+  }
+
+  public void writeKeyEvent(int keysym, boolean down)
+  {
+    writeKeyEvent(keysym, 0, down);
+  }
+
+  public void writeKeyEvent(int keysym, int keycode, boolean down)
+  {
+    synchronized (os) {
+      if (!server.supportsQEMUKeyEvent || keycode == 0) {
+        // This event isn't meaningful without a valid keysym
+        if (keysym == 0)
+          return;
+
+        startMsg(MsgTypes.msgTypeKeyEvent);
+        os.writeU8(down?1:0);
+        os.pad(2);
+        os.writeU32(keysym);
+        endMsg();
+      } else {
+        startMsg(MsgTypes.msgTypeQEMUClientMessage);
+        os.writeU8(MsgTypes.qemuExtendedKeyEvent);
+        os.writeU16(down?1:0);
+        os.writeU32(keysym);
+        os.writeU32(keycode);
+        endMsg();
       }
     }
-
-    encodings[nEncodings++] = Encodings.pseudoEncodingLastRect;
-    if (cp.customCompressLevel && cp.compressLevel >= 0 && cp.compressLevel <= 9)
-      encodings[nEncodings++] = Encodings.pseudoEncodingCompressLevel0 + cp.compressLevel;
-    if (!cp.noJpeg && cp.qualityLevel >= 0 && cp.qualityLevel <= 9)
-      encodings[nEncodings++] = Encodings.pseudoEncodingQualityLevel0 + cp.qualityLevel;
-
-    writeSetEncodings(nEncodings, encodings);
   }
 
-  synchronized public void writeFramebufferUpdateRequest(Rect r, boolean incremental)
+  public void writePointerEvent(Point pos, int buttonMask)
   {
-    startMsg(MsgTypes.msgTypeFramebufferUpdateRequest);
-    os.writeU8(incremental?1:0);
-    os.writeU16(r.tl.x);
-    os.writeU16(r.tl.y);
-    os.writeU16(r.width());
-    os.writeU16(r.height());
-    endMsg();
+    synchronized (os) {
+      Point p = new Point(pos.x,pos.y);
+      if (p.x < 0) p.x = 0;
+      if (p.y < 0) p.y = 0;
+      if (p.x >= server.width()) p.x = server.width() - 1;
+      if (p.y >= server.height()) p.y = server.height() - 1;
+
+      startMsg(MsgTypes.msgTypePointerEvent);
+      os.writeU8(buttonMask);
+      os.writeU16(p.x);
+      os.writeU16(p.y);
+      endMsg();
+    }
   }
 
-  synchronized public void writeKeyEvent(int key, boolean down)
+  public void writeClientCutText(String str, int len)
   {
-    startMsg(MsgTypes.msgTypeKeyEvent);
-    os.writeU8(down?1:0);
-    os.pad(2);
-    os.writeU32(key);
-    endMsg();
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeU32(len);
+      Charset latin1 = Charset.forName("ISO-8859-1");
+      ByteBuffer bytes = latin1.encode(str);
+      os.writeBytes(bytes.array(), 0, len);
+      endMsg();
+    }
   }
 
-  synchronized public void writePointerEvent(Point pos, int buttonMask)
+  // Extended clipboard messages (UltraVNC pseudoEncodingExtendedClipboard)
+  // reuse msgTypeClientCutText, distinguished from classic clipboard text
+  // by a negative length field.
+
+  public void writeClipboardCaps(int caps, int[] lengths)
   {
-    Point p = new Point(pos.x,pos.y);
-    if (p.x < 0) p.x = 0;
-    if (p.y < 0) p.y = 0;
-    if (p.x >= cp.width) p.x = cp.width - 1;
-    if (p.y >= cp.height) p.y = cp.height - 1;
+    if ((server.clipboardFlags() & ClipboardTypes.clipboardCaps) == 0)
+      throw new Exception("Server does not support clipboard \"caps\" action");
 
-    startMsg(MsgTypes.msgTypePointerEvent);
-    os.writeU8(buttonMask);
-    os.writeU16(p.x);
-    os.writeU16(p.y);
-    endMsg();
+    int count = 0;
+    for (int i = 0; i < 16; i++)
+      if ((caps & (1 << i)) != 0)
+        count++;
+
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeS32(-(4 + 4 * count));
+      os.writeU32(caps | ClipboardTypes.clipboardCaps);
+      int idx = 0;
+      for (int i = 0; i < 16; i++)
+        if ((caps & (1 << i)) != 0)
+          os.writeU32(lengths[idx++]);
+      endMsg();
+    }
   }
 
-  synchronized public void writeClientCutText(String str, int len)
+  public void writeClipboardRequest(int flags)
   {
-    startMsg(MsgTypes.msgTypeClientCutText);
-    os.pad(3);
-    os.writeU32(len);
-    Charset latin1 = Charset.forName("ISO-8859-1");
-    ByteBuffer bytes = latin1.encode(str);
-    os.writeBytes(bytes.array(), 0, len);
-    endMsg();
+    if ((server.clipboardFlags() & ClipboardTypes.clipboardRequest) == 0)
+      throw new Exception("Server does not support clipboard \"request\" action");
+
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeS32(-4);
+      os.writeU32(flags | ClipboardTypes.clipboardRequest);
+      endMsg();
+    }
   }
 
-  abstract public void startMsg(int type);
-  abstract public void endMsg();
+  public void writeClipboardPeek()
+  {
+    if ((server.clipboardFlags() & ClipboardTypes.clipboardPeek) == 0)
+      throw new Exception("Server does not support clipboard \"peek\" action");
 
-  synchronized public void setOutStream(OutStream os_) { os = os_; }
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeS32(-4);
+      os.writeU32(ClipboardTypes.clipboardPeek);
+      endMsg();
+    }
+  }
 
-  ConnParams getConnParams() { return cp; }
-  OutStream getOutStream() { return os; }
+  public void writeClipboardNotify(int flags)
+  {
+    if ((server.clipboardFlags() & ClipboardTypes.clipboardNotify) == 0)
+      throw new Exception("Server does not support clipboard \"notify\" action");
 
-  protected CMsgWriter(ConnParams cp_, OutStream os_) {cp = cp_; os = os_;}
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeS32(-4);
+      os.writeU32(flags | ClipboardTypes.clipboardNotify);
+      endMsg();
+    }
+  }
 
-  ConnParams cp;
-  OutStream os;
-  static LogWriter vlog = new LogWriter("CMsgWriter");
+  public void writeClipboardProvide(int flags, int[] lengths, byte[][] data)
+  {
+    if ((server.clipboardFlags() & ClipboardTypes.clipboardProvide) == 0)
+      throw new Exception("Server does not support clipboard \"provide\" action");
+
+    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+    java.util.zip.Deflater deflater = new java.util.zip.Deflater();
+    try {
+      java.util.zip.DeflaterOutputStream dos =
+        new java.util.zip.DeflaterOutputStream(baos, deflater);
+      int count = 0;
+      for (int i = 0; i < 16; i++) {
+        if ((flags & (1 << i)) == 0)
+          continue;
+        int len = lengths[count];
+        dos.write((len >>> 24) & 0xff);
+        dos.write((len >>> 16) & 0xff);
+        dos.write((len >>> 8) & 0xff);
+        dos.write(len & 0xff);
+        dos.write(data[count]);
+        count++;
+      }
+      dos.finish();
+    } catch (java.io.IOException e) {
+      throw new Exception(e.getMessage());
+    } finally {
+      deflater.end();
+    }
+    byte[] compressed = baos.toByteArray();
+
+    synchronized (os) {
+      startMsg(MsgTypes.msgTypeClientCutText);
+      os.pad(3);
+      os.writeS32(-(4 + compressed.length));
+      os.writeU32(flags | ClipboardTypes.clipboardProvide);
+      os.writeBytes(compressed, 0, compressed.length);
+      endMsg();
+    }
+  }
+
+  protected void startMsg(int type) {
+    os.writeU8(type);
+  }
+
+  protected void endMsg() {
+    os.flush();
+  }
+
+  protected ServerParams server;
+  protected OutStream os;
 }

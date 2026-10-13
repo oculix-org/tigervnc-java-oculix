@@ -1,6 +1,6 @@
 /* Copyright (C) 2005 Martin Koegler
  * Copyright (C) 2010 TigerVNC Team
- * Copyright (C) 2011 Brian P. Hinz
+ * Copyright (C) 2011-2017 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,20 +34,21 @@ public class CSecurityPlain extends CSecurity {
     StringBuffer username = new StringBuffer();
     StringBuffer password = new StringBuffer();
 
-    CConn.upg.getUserPasswd(username, password);
+    upg.getUserPasswd(cc.isSecure(), username, password);
 
     // Return the response to the server
-    os.writeU32(username.length());
-    os.writeU32(password.length());
-    byte[] utf8str;
+    byte[] userBytes, passBytes;
     try {
-      utf8str = username.toString().getBytes("UTF8");
-      os.writeBytes(utf8str, 0, username.length());
-      utf8str = password.toString().getBytes("UTF8");
-      os.writeBytes(utf8str, 0, password.length());
+      userBytes = username.toString().getBytes("UTF-8");
+      passBytes = password.toString().getBytes("UTF-8");
     } catch(java.io.UnsupportedEncodingException e) {
-      e.printStackTrace();
+      userBytes = username.toString().getBytes();
+      passBytes = password.toString().getBytes();
     }
+    os.writeU32(userBytes.length);
+    os.writeU32(passBytes.length);
+    os.writeBytes(userBytes, 0, userBytes.length);
+    os.writeBytes(passBytes, 0, passBytes.length);
     os.flush();
     return true;
   }

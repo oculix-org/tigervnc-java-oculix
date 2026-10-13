@@ -1,7 +1,7 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
  * Copyright 2009-2011 Pierre Ossman for Cendio AB
  * Copyright (C) 2011 D. R. Commander.  All Rights Reserved.
- * Copyright (C) 2011 Brian P. Hinz
+ * Copyright (C) 2011-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,77 +27,97 @@ package com.tigervnc.rfb;
 
 abstract public class CMsgHandler {
 
+  static LogWriter vlog = new LogWriter("CMsgHandler");
+
   public CMsgHandler() {
-    cp = new ConnParams();
+    server = new ServerParams();
   }
 
   public void setDesktopSize(int width, int height)
   {
-    cp.width = width;
-    cp.height = height;
+    server.setDimensions(width, height);
   }
 
   public void setExtendedDesktopSize(int reason, int result,
                                      int width, int height,
                                      ScreenSet layout)
   {
-    cp.supportsSetDesktopSize = true;
+    server.supportsSetDesktopSize = true;
 
     if ((reason == screenTypes.reasonClient) && (result != screenTypes.resultSuccess))
       return;
 
-    if (!layout.validate(width, height))
-      vlog.error("Server sent us an invalid screen layout");
-
-    cp.width = width;
-    cp.height = height;
-    cp.screenLayout = layout;
+    server.setDimensions(width, height, layout);
   }
+
+  abstract public void setCursor(int width, int height, Point hotspot,
+                                 byte[] data);
 
   public void setPixelFormat(PixelFormat pf)
   {
-    cp.setPF(pf);
+    server.setPF(pf);
   }
 
   public void setName(String name)
   {
-    cp.setName(name);
+    server.setName(name);
   }
 
   public void fence(int flags, int len, byte[] data)
   {
-    cp.supportsFence = true;
+    server.supportsFence = true;
   }
 
   public void endOfContinuousUpdates()
   {
-    cp.supportsContinuousUpdates = true;
+    server.supportsContinuousUpdates = true;
   }
 
-  public void clientRedirect(int port, String host,
-                             String x509subject) {}
+  public void supportsQEMUKeyEvent()
+  {
+    server.supportsQEMUKeyEvent = true;
+  }
 
-  public void setCursor(int width, int height, Point hotspot,
-                        int[] data, byte[] mask) {}
-  public void serverInit() {}
+  public void setLEDState(int state)
+  {
+    server.setLEDState(state);
+  }
 
-  public void framebufferUpdateStart() {}
-  public void framebufferUpdateEnd() {}
-  public void beginRect(Rect r, int encoding) {}
-  public void endRect(Rect r, int encoding) {}
+  // No-op by default (matches the C++ CConnection base behavior): the
+  // Java viewer has no pointer-grab/capture mode, which is the only
+  // context in which C++ actually warps the local cursor in response
+  // to this, so there is nothing meaningful to do with it here.
+  public void setCursorPos(Point pos) { }
 
-  public void setColourMapEntries(int firstColour, int nColours,
-    int[] rgbs) { }
-  public void bell() {}
-  public void serverCutText(String str, int len) {}
+  abstract public void handleClipboardCaps(int flags, int[] lengths);
+  abstract public void handleClipboardRequest(int flags);
+  abstract public void handleClipboardPeek();
+  abstract public void handleClipboardNotify(int flags);
+  abstract public void handleClipboardProvide(int flags, int[] lengths,
+                                              byte[][] data);
 
-  public void fillRect(Rect r, int pix) {}
-  public void imageRect(Rect r, Object pixels) {}
-  public void copyRect(Rect r, int srcX, int srcY) {}
+  abstract public void clientRedirect(int port, String host,
+                                      String x509subject);
 
-  abstract public PixelFormat getPreferredPF();
+  public void serverInit(int width, int height,
+                         PixelFormat pf, String name)
+  {
+    server.setDimensions(width, height);
+    server.setPF(pf);
+    server.setName(name);
+  }
 
-  public ConnParams cp;
+  abstract public void readAndDecodeRect(Rect r, int encoding,
+                                         ModifiablePixelBuffer pb);
 
-  static LogWriter vlog = new LogWriter("CMsgHandler");
+  public void framebufferUpdateStart() {};
+  public void framebufferUpdateEnd() {};
+  abstract public void dataRect(Rect r, int encoding);
+
+  abstract public void setColourMapEntries(int firstColour, int nColours,
+    int[] rgbs);
+  abstract public void bell();
+  abstract public void serverCutText(String str, int len);
+
+  public ServerParams server;
 }

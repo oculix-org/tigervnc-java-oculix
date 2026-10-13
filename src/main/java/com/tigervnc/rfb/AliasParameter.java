@@ -40,8 +40,16 @@ public class AliasParameter extends VoidParameter {
   public boolean isBool() { return param.isBool(); }
 
   public void setImmutable() {
-    vlog.debug("set immutable "+getName()+" (Alias)");
+    vlog.debug("Set immutable "+getName()+" (Alias)");
     param.setImmutable();
+  }
+
+  public void setHasBeenSet() {
+    param.setHasBeenSet();
+  }
+
+  public boolean hasBeenSet() {
+    return param.hasBeenSet();
   }
 
   protected VoidParameter param;

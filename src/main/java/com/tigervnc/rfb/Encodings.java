@@ -1,6 +1,6 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
  * Copyright (C) 2011 D. R. Commander.  All Rights Reserved.
- * Copyright (C) 2012 Brian P. Hinz
+ * Copyright (C) 2012-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,8 +38,11 @@ public class Encodings {
   public static final int pseudoEncodingExtendedDesktopSize = -308;
   public static final int pseudoEncodingDesktopName = -307;
   public static final int pseudoEncodingClientRedirect = -311;
+  public static final int pseudoEncodingLEDState = -261;
   public static final int pseudoEncodingFence = -312;
   public static final int pseudoEncodingContinuousUpdates = -313;
+  public static final int pseudoEncodingCursorWithAlpha = -314;
+  public static final int pseudoEncodingQEMUKeyEvent = -258;
 
   // TightVNC-specific
   public static final int pseudoEncodingLastRect = -224;
@@ -57,6 +60,14 @@ public class Encodings {
   public static final int pseudoEncodingSubsampGray = -765;
   public static final int pseudoEncodingSubsamp8X = -764;
   public static final int pseudoEncodingSubsamp16X = -763;
+
+  // VMware-specific
+  public static final int pseudoEncodingVMwareCursor = 0x574d5664;
+  public static final int pseudoEncodingVMwareCursorPosition = 0x574d5666;
+  public static final int pseudoEncodingVMwareLEDState = 0x574d5668;
+
+  // UltraVNC-specific
+  public static final int pseudoEncodingExtendedClipboard = 0xC0A1E5CE;
 
   public static int encodingNum(String name) {
     if (name.equalsIgnoreCase("raw"))      return encodingRaw;

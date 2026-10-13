@@ -1,6 +1,6 @@
 /* Copyright (C) 2002-2005 RealVNC Ltd.  All Rights Reserved.
  * Copyright (C) 2010 TigerVNC Team
- * Copyright (C) 2011-2015 Brian P. Hinz
+ * Copyright (C) 2011-2026 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,10 +37,16 @@ public class Security {
   public static final int secTypeSSPI      = 7;
   public static final int secTypeSSPIne    = 8;
 
+  public static final int secTypeDH        = 30;
+  public static final int secTypeMSLogonII = 113;
+
   public static final int secTypeTight     = 16;
   public static final int secTypeUltra     = 17;
   public static final int secTypeTLS       = 18;
   public static final int secTypeVeNCrypt  = 19;
+
+  public static final int secTypeRA256     = 129;
+  public static final int secTypeRAne256   = 130;
 
   /* VeNCrypt subtypes */
   public static final int secTypePlain     = 256;
@@ -54,11 +60,16 @@ public class Security {
   public static final int secTypeTLSIdent  = 266;
   public static final int secTypeX509Ident = 267;
 
+  public static final int secTypeRA2UserPass = 1;
+  public static final int secTypeRA2Pass     = 2;
+
   // result types
 
   public static final int secResultOK = 0;
   public static final int secResultFailed = 1;
   public static final int secResultTooMany = 2; // deprecated
+
+  public Security() { }
 
   public Security(StringParameter secTypes)
   {
@@ -70,9 +81,9 @@ public class Security {
     secTypesStr = null;
   }
 
-  public static List<Integer> enabledSecTypes = new ArrayList<Integer>();
+  private List<Integer> enabledSecTypes = new ArrayList<Integer>();
 
-  public static final List<Integer> GetEnabledSecTypes()
+  public final List<Integer> GetEnabledSecTypes()
   {
     List<Integer> result = new ArrayList<Integer>();
 
@@ -98,7 +109,7 @@ public class Security {
     return (result);
   }
 
-  public static final List<Integer> GetEnabledExtSecTypes()
+  public final List<Integer> GetEnabledExtSecTypes()
   {
     List<Integer> result = new ArrayList<Integer>();
 
@@ -111,7 +122,7 @@ public class Security {
     return (result);
   }
 
-  public static final void EnableSecType(int secType)
+  public final void EnableSecType(int secType)
   {
 
     for (Iterator<Integer> i = enabledSecTypes.iterator(); i.hasNext(); )
@@ -134,7 +145,29 @@ public class Security {
     return false;
   }
 
-  public static void DisableSecType(int secType) { enabledSecTypes.remove((Object)secType); }
+  public String ToString()
+  {
+    Iterator<Integer> i;
+    String out = new String("");
+    boolean firstpass = true;
+    String name;
+
+    for (i = enabledSecTypes.iterator(); i.hasNext(); ) {
+      name = secTypeName((Integer)i.next());
+      if (name.startsWith("[")) /* Unknown security type */
+        continue;
+
+      if (!firstpass)
+        out = out.concat(",");
+      else
+        firstpass = false;
+      out = out.concat(name);
+    }
+
+    return out;
+  }
+
+  public void DisableSecType(int secType) { enabledSecTypes.remove((Object)secType); }
 
   public static int secTypeNum(String name) {
     if (name.equalsIgnoreCase("None"))      return secTypeNone;
@@ -142,8 +175,12 @@ public class Security {
     if (name.equalsIgnoreCase("Tight"))	    return secTypeTight;
     if (name.equalsIgnoreCase("RA2"))       return secTypeRA2;
     if (name.equalsIgnoreCase("RA2ne"))	    return secTypeRA2ne;
+    if (name.equalsIgnoreCase("RA2_256"))   return secTypeRA256;
+    if (name.equalsIgnoreCase("RA2ne_256"))	return secTypeRAne256;
     if (name.equalsIgnoreCase("SSPI"))      return secTypeSSPI;
     if (name.equalsIgnoreCase("SSPIne"))	  return secTypeSSPIne;
+    if (name.equalsIgnoreCase("DH"))        return secTypeDH;
+    if (name.equalsIgnoreCase("MSLogonII")) return secTypeMSLogonII;
     //if (name.equalsIgnoreCase("ultra"))	    return secTypeUltra;
     //if (name.equalsIgnoreCase("TLS"))	      return secTypeTLS;
     if (name.equalsIgnoreCase("VeNCrypt"))  return secTypeVeNCrypt;
@@ -170,8 +207,12 @@ public class Security {
     case secTypeTight:      return "Tight";
     case secTypeRA2:        return "RA2";
     case secTypeRA2ne:      return "RA2ne";
+    case secTypeRA256:      return "RA2_256";
+    case secTypeRAne256:    return "RA2ne_256";
     case secTypeSSPI:       return "SSPI";
     case secTypeSSPIne:     return "SSPIne";
+    case secTypeDH:         return "DH";
+    case secTypeMSLogonII:  return "MSLogonII";
     //case secTypeUltra:      return "Ultra";
     //case secTypeTLS:        return "TLS";
     case secTypeVeNCrypt:   return "VeNCrypt";
@@ -203,7 +244,9 @@ public class Security {
     return (result);
   }
 
-  public final void SetSecTypes(List<Integer> secTypes) { enabledSecTypes = secTypes; }
+  public final void SetSecTypes(List<Integer> secTypes) {
+    enabledSecTypes = secTypes;
+  }
 
   static LogWriter vlog = new LogWriter("Security");
 }

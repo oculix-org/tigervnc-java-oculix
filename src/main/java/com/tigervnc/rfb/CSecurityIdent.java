@@ -1,4 +1,4 @@
-/* Copyright (C) 2011 Brian P. Hinz
+/* Copyright (C) 2011-2017 Brian P. Hinz
  *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,24 +30,22 @@ public class CSecurityIdent extends CSecurity {
 
     StringBuffer username = new StringBuffer();
 
-    CConn.upg.getUserPasswd(username, null);
+    upg.getUserPasswd(cc.isSecure(), username, null);
 
     // Return the response to the server
-    os.writeU32(username.length());
+    byte[] utf8str;
     try {
-      byte[] utf8str = username.toString().getBytes("UTF8");
-      os.writeBytes(utf8str, 0, username.length());
+      utf8str = username.toString().getBytes("UTF-8");
     } catch(java.io.UnsupportedEncodingException e) {
-      e.printStackTrace();
+      utf8str = username.toString().getBytes();
     }
+    os.writeU32(utf8str.length);
+    os.writeBytes(utf8str, 0, utf8str.length);
     os.flush();
     return true;
   }
 
   public int getType() { return Security.secTypeIdent; }
-
-  java.net.Socket sock;
-  UserPasswdGetter upg;
 
   static LogWriter vlog = new LogWriter("Ident");
   public String description() { return "No Encryption"; }
