@@ -1,11 +1,32 @@
 <div align="center">
 
+[![Upstream](https://img.shields.io/badge/upstream-TigerVNC%20java%2F%208525719c-1f883d?style=flat-square)](.)
+[![Headless](https://img.shields.io/badge/client-headless%2C%20no%20dialogs-0969da?style=flat-square)](.)
+[![Handshake](https://img.shields.io/badge/handshake-cancellable-1f883d?style=flat-square)](.)
+[![API](https://img.shields.io/badge/OculiX%20API-unchanged-8250df?style=flat-square)](.)
 [![SSH](https://img.shields.io/badge/deps-jsch%20classic%20→%20mwiede%20fork-1f883d?style=flat-square)](.)
 [![CVE](https://img.shields.io/badge/CVE--2023--48795-mitigated-d1242f?style=flat-square)](.)
 [![Fix](https://img.shields.io/badge/fix-ZRLE%203--byte%20CPIXEL-1f883d?style=flat-square)](.)
 [![Compat](https://img.shields.io/badge/no%20regression-legacy%20servers-0969da?style=flat-square)](.)
 
 </div>
+
+2.0.4 is the first release on Maven Central since 2.0.2. 2.0.3 was released on GitHub only, so everything it brought is part of this release too: the sections below cover both.
+
+## 🔄 The TigerVNC core, taken from upstream
+
+The `com.tigervnc` package is resynchronised with TigerVNC's `java/` directory at commit `8525719c`. The headless client in `com.sikulix.vnc` is rewritten on the new API instead of working around it: a `FullFramePixelBuffer` that TigerVNC's decoders write into themselves, in one fixed format, 32 bits per pixel and 8 bits per channel, with no graphics environment and no colour lost. A resized remote desktop gets a fresh buffer, and the server's cursor shape is ignored: a client with no screen has no cursor to draw.
+
+## 🛑 A stalled handshake can be cancelled
+
+`VNCClient.connect()` used to loop until the session was ready. A server that went quiet in the middle of the handshake kept the thread forever, socket open. Interrupting the thread now abandons the handshake: the socket is closed, the decoder threads are stopped, and the exception is rethrown with any close error attached. A test proves it: a fake server withholds its SecurityResult, the thread is interrupted, and the test requires the thread to have ended and the server to have read end-of-file, before any cleanup.
+
+## 🔐 Passwords and certificates, with nobody to ask
+
+- **One password per connection**, set for one step of the security exchange and removed in a `finally`: a thread no longer carries the password of its previous connection.
+- **TigerVNC's questions** (unknown or expired certificate, hostname mismatch, server key never seen) **are answered no**, and the full question goes to the log, with how to trust a TLS server properly (`CSecurityTLS.X509CA`). No Swing dialog ever pops up in a headless process.
+- **A refused certificate says why**: the reason reaches the TLS engine as a `CertificateException` with its cause, instead of a silent internal error. CA and CRL files are accepted only if they are regular files.
+- Ident security asks for a user name only: the password getter no longer throws a `NullPointerException` on the missing password buffer.
 
 ## SSH: migrated from JCraft JSch to the mwiede fork
 
@@ -62,11 +83,11 @@ Bump the dep in the consumer `pom.xml`:
 <dependency>
   <groupId>io.github.oculix-org</groupId>
   <artifactId>tigervnc-java-oculix</artifactId>
-  <version>2.0.3</version>
+  <version>2.0.4</version>
 </dependency>
 ```
 
-No API change. No behaviour change against legacy servers or legacy SSH endpoints. Silent improvement everywhere else.
+The methods OculiX calls (`connect`, `processMessages`, `refreshFramebuffer`, `getFrameBuffer`, `getBounds`, `keyDown`, `keyUp`, `mouseEvent`, `close`) keep their signatures. `VNCClient`'s public drawing callbacks (`fillRect`, `imageRect`, `copyRect`, `serverInit`, `setDesktopSize`) are gone: TigerVNC draws now, and nothing outside had a reason to call them. No behaviour change against legacy servers or legacy SSH endpoints.
 
 ## Credits
 
