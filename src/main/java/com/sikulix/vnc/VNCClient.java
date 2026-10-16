@@ -7,7 +7,6 @@ import com.tigervnc.network.TcpSocket;
 import com.tigervnc.rdr.FdInStreamBlockCallback;
 import com.tigervnc.rfb.*;
 import com.tigervnc.rfb.Exception;
-import com.tigervnc.vncviewer.CConn;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -16,26 +15,27 @@ import java.io.IOException;
 
 import static com.sikulix.vnc.VNCClipboard.*;
 
+/**
+ * A headless VNC client: one thread reads and decodes the server messages
+ * ({@link #processMessages()}), any other thread may send input, request updates and copy
+ * the frame buffer.
+ *
+ * Outgoing messages are serialised by TigerVNC's writer, which locks its output stream per
+ * message. The frame buffer is swapped through a volatile field and copied under its image
+ * lock. The decoder threads belong to the reading thread: they are stopped by that thread on
+ * its way out, or by the connecting thread when the handshake fails.
+ */
 public class VNCClient extends CConnection implements FdInStreamBlockCallback, Closeable {
 
-  static ThreadLocal<UserPasswdGetter> UPG = new ThreadLocal<>();
+  private final TcpSocket sock;
+  private volatile boolean shuttingDown = false;
+  private volatile boolean reading = false;
+  private volatile VNCFrameBuffer buffer;
+  static LogWriter vlog = new LogWriter("VNCClient");
 
   static {
-    CConn.upg = new UserPasswdGetter() {
-      @Override
-      public boolean getUserPasswd(StringBuffer stringBuffer, StringBuffer stringBuffer1) {
-        UserPasswdGetter upg = UPG.get();
-        return false;
-      }
-    };
+    CSecurity.msg = new RefusingMsgBox();
   }
-
-  private final TcpSocket sock;
-  private boolean shuttingDown = false;
-  private PixelFormat serverPF;
-  private int currentEncoding;
-  private VNCFrameBuffer buffer;
-  static LogWriter vlog = new LogWriter("VNCClient");
 
   public static void onDebugging() {
     LogWriter.setLogParams("300");
@@ -45,20 +45,50 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     LogWriter.setLogParams("30");
   }
 
+  /**
+   * Opens the connection and runs the RFB handshake until the session is usable.
+   * Interrupting the calling thread abandons the handshake; on abandon or failure the
+   * socket is closed before the exception reaches the caller.
+   */
   public static VNCClient connect(String address, int port, String password, boolean shareConnection) {
     VNCClient client = new VNCClient(address, port, password, shareConnection);
-    while (client.state() != VNCClient.RFBSTATE_NORMAL) {
-      client.processMsg();
+    try {
+      while (client.state() != stateEnum.RFBSTATE_NORMAL) {
+        if (Thread.currentThread().isInterrupted()) {
+          throw new Exception("VNCClient: handshake with " + address + ":" + port + " interrupted");
+        }
+        client.processMsg();
+      }
+    } catch (RuntimeException | Error failure) {
+      client.abandon(failure);
+      throw failure;
     }
     vlog.debug("running");
     return client;
   }
 
+  /**
+   * Closes the socket of a handshake that will not complete and stops the decoder threads;
+   * close errors stay attached to the cause.
+   */
+  private void abandon(Throwable cause) {
+    shuttingDown = true;
+    try {
+      sock.shutdown();
+    } catch (RuntimeException e) {
+      cause.addSuppressed(e);
+    }
+    try {
+      sock.close();
+    } catch (IOException | RuntimeException e) {
+      cause.addSuppressed(e);
+    }
+    stopDecoder();
+  }
+
   private VNCClient(String address, int port, final String password, boolean shareConnection) {
     this.security = new ThreadLocalSecurityClient(new BasicUserPasswdGetter(password));
-
-    // CDC fix: force Raw encoding to avoid corruption with TigerVNC/RFB 3.x
-    this.currentEncoding = Encodings.encodingZRLE;
+    this.setPreferredEncoding(Encodings.encodingZRLE);
     this.setShared(shareConnection);
 
     setServerName(address);
@@ -69,33 +99,33 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     this.initialiseProtocol();
   }
 
-  PixelFormat pixelFormat = null;
-  int bufferW = 0;
-  int bufferH = 0;
-
+  /**
+   * Called by TigerVNC once the server is initialised, before the first update request:
+   * installs a frame buffer of the server's size and asks for {@link VNCFrameBuffer#PIXEL_FORMAT}.
+   */
   @Override
-  public void serverInit() {
-    super.serverInit();
-    this.serverPF = this.cp.pf();
-    pixelFormat = serverPF;
-    bufferW = this.cp.width;
-    bufferH = this.cp.height;
-    this.buffer = new VNCFrameBuffer(bufferW, bufferH, pixelFormat);
-    PixelFormat clientPF = this.buffer.getPixelFormat();
-    this.cp.setPF(clientPF);
-    this.writer().writeSetPixelFormat(clientPF);
-    this.writer().writeSetEncodings(this.currentEncoding, true);
+  public void initDone() {
+    installFrameBuffer();
+    setPF(VNCFrameBuffer.PIXEL_FORMAT);
+  }
+
+  /** Called by TigerVNC when the server's desktop size changes: replaces the frame buffer. */
+  @Override
+  public void resizeFramebuffer() {
+    installFrameBuffer();
+  }
+
+  /** Hands TigerVNC a new frame buffer of the server's size, then publishes it to readers. */
+  private void installFrameBuffer() {
+    VNCFrameBuffer fb = new VNCFrameBuffer(server.width(), server.height());
+    setFramebuffer(fb);
+    buffer = fb;
   }
 
   public void serverCutText(String content, int length) {
     if (length > 0) {
       VNCClipboard.putTextToClipboard(PLAIN, UTF8, CHAR_BUFFER, content);
     }
-  }
-
-  public void setDesktopSize(int var1, int var2) {
-    super.setDesktopSize(var1, var2);
-    this.resizeFrameBuffer();
   }
 
   @Override
@@ -112,23 +142,16 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
 
   }
 
+  /** Ignores the server's cursor shape: a headless client draws no cursor. */
   @Override
-  public PixelFormat getPreferredPF() {
-    return null;
+  public void setCursor(int width, int height, Point hotspot, byte[] data) {
   }
 
-  private void resizeFrameBuffer() {
-    if (this.buffer != null) {
-      if (this.cp.width != 0 || this.cp.height != 0) {
-        if (this.buffer.width() != this.cp.width || this.buffer.height() != this.cp.height) {
-          this.buffer.resize(cp.width, cp.height);
-        }
-      }
-    }
-  }
-
+  /** Requests a full, non-incremental update of the whole frame buffer. */
+  @Override
   public void refreshFramebuffer() {
-    refreshFramebuffer(0, 0, cp.width, cp.height, false);
+    Rectangle bounds = getBounds();
+    refreshFramebuffer(0, 0, bounds.width, bounds.height, false);
   }
 
   /**
@@ -142,27 +165,6 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
    */
   public void refreshFramebuffer(int x, int y, int w, int h, boolean incremental) {
     writer().writeFramebufferUpdateRequest(new Rect(x, y, w, h), incremental);
-  }
-
-  @Override
-  public void framebufferUpdateStart() {
-    refreshFramebuffer(0, 0, cp.width, cp.height, true);
-  }
-
-  @Override
-  public void framebufferUpdateEnd() {
-  }
-
-  public void fillRect(Rect r, int p) {
-    this.buffer.fillRect(r.tl.x, r.tl.y, r.width(), r.height(), p);
-  }
-
-  public void imageRect(Rect r, Object p) {
-    this.buffer.imageRect(r.tl.x, r.tl.y, r.width(), r.height(), p);
-  }
-
-  public void copyRect(Rect r, int sx, int sy) {
-    this.buffer.copyRect(r.tl.x, r.tl.y, r.width(), r.height(), sx, sy);
   }
 
   /**
@@ -200,15 +202,24 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
   }
 
   /**
-   * Closes the connection
-   *
+   * Closes the connection. The reading thread stops the decoder threads when its read fails;
+   * if no thread is reading, they are stopped here.
    */
+  @Override
   public void close() {
     this.shuttingDown = true;
     if (this.sock != null) {
       this.sock.shutdown();
     }
+    if (!reading) {
+      stopDecoder();
+    }
     vlog.debug("shutting down");
+  }
+
+  /** Stops TigerVNC's decoder threads; safe to call more than once and from several threads. */
+  private synchronized void stopDecoder() {
+    super.close();
   }
 
   public boolean isShuttingDown() {
@@ -222,10 +233,13 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     return "VNCClient: " + getServerName() + ":" + getServerPort();
   }
 
+  /** The size of the current frame buffer, which is what {@link #getFrameBuffer} can copy from. */
   public Rectangle getBounds() {
-    return new Rectangle(0, 0, this.cp.width, this.cp.height);
+    VNCFrameBuffer fb = buffer;
+    return new Rectangle(0, 0, fb.width(), fb.height());
   }
 
+  /** Copies a region of the current frame buffer; parts outside it stay black. */
   public BufferedImage getFrameBuffer(int x, int y, int w, int h) {
     return buffer.getImage(x, y, w, h);
   }
@@ -241,9 +255,19 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
     }
   }
 
+  /**
+   * Reads and decodes server messages until {@link #close()} is called or the connection fails,
+   * then stops the decoder threads. Only one thread may run this.
+   */
   public void processMessages() {
-    while (!shuttingDown) {
-      processMsg();
+    reading = true;
+    try {
+      while (!shuttingDown) {
+        processMsg();
+      }
+    } finally {
+      stopDecoder();
+      reading = false;
     }
   }
 
