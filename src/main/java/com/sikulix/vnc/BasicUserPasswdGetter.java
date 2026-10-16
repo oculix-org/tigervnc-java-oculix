@@ -17,20 +17,23 @@ class BasicUserPasswdGetter implements UserPasswdGetter
         this.password = password;
     }
 
+    /**
+     * Hands TigerVNC the fixed password, whatever the secure flag says; without a password the
+     * buffer is left empty. Ident security asks for a user name only and passes {@code null}
+     * for the password buffer.
+     */
     @Override
-    public boolean getUserPasswd(StringBuffer user, StringBuffer passwd)
+    public void getUserPasswd(boolean secure, StringBuffer user, StringBuffer passwd)
     {
         if (user != null) {
             user.setLength(0);
         }
 
-        if (password != null) {
+        if (passwd != null) {
             passwd.setLength(0);
-            passwd.append(password);
-
-            return true;
-        } else {
-            return false;
+            if (password != null) {
+                passwd.append(password);
+            }
         }
     }
 }
