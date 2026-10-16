@@ -135,7 +135,9 @@ public class CSecurityTLS extends CSecurity {
       manager = new SSLEngineManager(engine, is, os);
       manager.doHandshake();
     } catch(java.lang.Exception e) {
-      throw new SystemException(e.toString());
+      SystemException wrapped = new SystemException(e.getMessage());
+      wrapped.initCause(e);
+      throw wrapped;
     }
 
     cc.setStreams(new TLSInStream(is, manager),
@@ -209,7 +211,7 @@ public class CSecurityTLS extends CSecurity {
             for (X509Certificate c : ((X509TrustManager)m).getAcceptedIssuers())
               ks.setCertificateEntry(getThumbprint((X509Certificate)c), c);
         File cacert = new File(cafile);
-        if (cacert.exists() && cacert.canRead()) {
+        if (cacert.isFile() && cacert.canRead()) {
           InputStream caStream = new MyFileInputStream(cacert);
           Collection<? extends Certificate> cacerts =
             cf.generateCertificates(caStream);
@@ -221,7 +223,7 @@ public class CSecurityTLS extends CSecurity {
         PKIXBuilderParameters params =
           new PKIXBuilderParameters(ks, new X509CertSelector());
         File crlcert = new File(crlfile);
-        if (!crlcert.exists() || !crlcert.canRead()) {
+        if (!crlcert.isFile() || !crlcert.canRead()) {
           params.setRevocationEnabled(false);
         } else {
           InputStream crlStream = new FileInputStream(crlfile);
@@ -235,7 +237,9 @@ public class CSecurityTLS extends CSecurity {
         tmf.init(new CertPathTrustManagerParameters(params));
         tm = (X509TrustManager)tmf.getTrustManagers()[0];
       } catch (java.lang.Exception e) {
-        throw new Exception(e.getMessage());
+        Exception wrapped = new Exception(e.toString());
+        wrapped.initCause(e);
+        throw wrapped;
       }
     }
 
@@ -257,7 +261,21 @@ public class CSecurityTLS extends CSecurity {
       return r.toString();
     }
 
+    /**
+     * Rejects a server certificate the way the TLS engine expects: a refusal raised as a
+     * runtime exception would be reported as an internal error, without its reason.
+     */
     public void checkServerTrusted(X509Certificate[] chain, String authType)
+      throws CertificateException
+    {
+      try {
+        verifyServer(chain, authType);
+      } catch (RuntimeException e) {
+        throw new CertificateException(e.getMessage(), e);
+      }
+    }
+
+    private void verifyServer(X509Certificate[] chain, String authType)
       throws CertificateException
     {
       Collection<? extends Certificate> certs = null;
@@ -431,20 +449,15 @@ public class CSecurityTLS extends CSecurity {
               if (peer.equals(((String)nxt.get(1)).toLowerCase()))
                 return;
             } else if (((Integer)nxt.get(0)).intValue() == 7) {
-              String peer = ((CConn)client).getSocket().getPeerAddress();
+              String peer = client.getServerName();
               if (peer.equals(((String)nxt.get(1)).toLowerCase()))
                 return;
             }
           }
         }
-        Object[] answer = {"YES", "NO"};
-        int ret = JOptionPane.showOptionDialog(null,
-          "Hostname ("+client.getServerName()+") does not match the"+
-          " server certificate, do you want to continue?",
-          "Certificate hostname mismatch",
-          JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
-          null, answer, answer[0]);
-        if (ret != JOptionPane.YES_OPTION)
+        if (!msg.showMsgBox(YES_NO_OPTION, "Certificate hostname mismatch",
+              "Hostname ("+client.getServerName()+") does not match the"+
+              " server certificate, do you want to continue?"))
           throw new WarningException("Certificate hostname mismatch.");
       } catch (CertificateParsingException e) {
         throw new SystemException(e.getMessage());
