@@ -164,7 +164,7 @@ public class VNCClient extends CConnection implements FdInStreamBlockCallback, C
    * @param incremental Zero sends entire desktop, One sends changes only.
    */
   public void refreshFramebuffer(int x, int y, int w, int h, boolean incremental) {
-    writer().writeFramebufferUpdateRequest(new Rect(x, y, w, h), incremental);
+    writer().writeFramebufferUpdateRequest(new Rect(x, y, x + w, y + h), incremental);
   }
 
   /**
