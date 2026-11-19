@@ -578,7 +578,8 @@ public class PixelFormat {
       cm = new DirectColorModel(8, rmask, gmask, bmask);
       break;
     case 16:
-      cm = new DirectColorModel(32, 0xF800, 0x07C0, 0x003E);
+      cm = new DirectColorModel(32, pf.redMax << pf.redShift,
+        pf.greenMax << pf.greenShift, pf.blueMax << pf.blueShift);
       break;
     case 24:
       cm = new DirectColorModel(32, (0xff << 16), (0xff << 8), 0xff);
