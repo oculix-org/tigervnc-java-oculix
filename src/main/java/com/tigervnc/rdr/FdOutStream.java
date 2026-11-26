@@ -57,9 +57,11 @@ public class FdOutStream extends OutStream {
     return offset + ptr - sentUpTo;
   }
 
+  // True while bytes are waiting to be sent. length() is the stream position
+  // (it includes everything already sent), so it can't answer this (#25).
   public boolean hasBufferedData()
   {
-    return length() > 0;
+    return ptr > sentUpTo;
   }
 
   int bufferUsage()

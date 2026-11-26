@@ -37,7 +37,6 @@ public class SocketDescriptor implements FileDescriptor {
       channel = SocketChannel.open();
       channel.configureBlocking(false);
       selector = Selector.open();
-      channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
     } catch (IOException e) {
       throw new Exception(e.getMessage());
     }
@@ -67,15 +66,21 @@ public class SocketDescriptor implements FileDescriptor {
     return SelectorProvider.provider();
   }
 
+  // The selector holds the channel only for the length of one select: register, select, then
+  // cancel the key and deregister it. On Windows (WEPoll), while the socket stays registered here,
+  // Fl's selector stops reporting OP_READ for it, so the viewer misses the server's messages
+  // once it no longer polls them in a busy loop (#25).
   synchronized public int select(int interestOps, Integer timeout) throws Exception {
     int n;
-    if (selector == null) return 0;
-    SelectionKey key = channel.keyFor(selector);
-    if (key == null || !key.isValid())
-      return 0;
-    key.interestOps(interestOps);
-    selector.selectedKeys().clear();
+    if (selector == null || !selector.isOpen() || !channel.isOpen()) return 0;
+    SelectionKey key;
     try {
+      key = channel.register(selector, interestOps);
+    } catch (ClosedChannelException e) {
+      return 0;
+    }
+    try {
+      selector.selectedKeys().clear();
       if (timeout == null) {
         n = selector.select();
       } else {
@@ -89,12 +94,20 @@ public class SocketDescriptor implements FileDescriptor {
           break;
         }
       }
+      if (n > 0 && (key.readyOps() & interestOps) == 0)
+        return 0;
+      return n;
     } catch (java.io.IOException e) {
       throw new Exception(e.getMessage());
+    } finally {
+      key.cancel();
+      try {
+        selector.selectNow();   // deregisters the cancelled key
+      } catch (java.io.IOException | ClosedSelectorException ignored) {
+      }
+      if (selector.isOpen())
+        selector.selectedKeys().clear();
     }
-    if (n > 0 && (key.readyOps() & interestOps) == 0)
-      return 0;
-    return n;
   }
 
   public int write(ByteBuffer buf, int len) throws Exception {
@@ -160,7 +173,6 @@ public class SocketDescriptor implements FileDescriptor {
       channel = channel_;
       channel.configureBlocking(false);
       selector = Selector.open();
-      channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
     } catch (java.io.IOException e) {
       throw new Exception(e.getMessage());
     }
